@@ -24,6 +24,11 @@ function sanitizeLine(line: string): string {
 
 export function extractRangeLabelFromName(fileName: string): string | null {
   const name = fileName.replace(extname(fileName), '');
+  const tileExportMatch = /^Tile_Export_(.+)$/.exec(name);
+  if (tileExportMatch && tileExportMatch[1].trim().length > 0) {
+    return tileExportMatch[1].trim();
+  }
+
   const explicit = /(\d+\s*-\s*\d+)/.exec(name);
   if (explicit) {
     return explicit[1].replace(/\s+/g, '');
