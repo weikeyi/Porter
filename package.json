@@ -1,0 +1,58 @@
+{
+  "name": "tilecopy",
+  "version": "0.1.1",
+  "private": true,
+  "type": "module",
+  "description": "TileCopy - visualize and control copying of tile directory batches on Windows.",
+  "author": "",
+  "license": "MIT",
+  "main": "dist-electron/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "vue-tsc --noEmit",
+    "dist:win": "npm run build && electron-builder --win portable"
+  },
+  "dependencies": {
+    "electron-store": "^11.0.2",
+    "fast-glob": "^3.3.2",
+    "fs-extra": "^11.2.0",
+    "vue": "^3.4.21"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.2",
+    "@vitejs/plugin-vue": "^5.0.4",
+    "electron": "^31.0.1",
+    "electron-builder": "^24.13.3",
+    "electron-log": "^5.1.1",
+    "electron-vite": "^2.2.0",
+    "typescript": "^5.4.5",
+    "vite": "^5.2.10",
+    "vue-tsc": "^2.0.21"
+  },
+  "build": {
+    "appId": "com.tilecopy.app",
+    "productName": "TileCopy",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist-electron",
+      "dist"
+    ],
+    "extraMetadata": {
+      "main": "dist-electron/main/index.js"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    }
+  }
+}
