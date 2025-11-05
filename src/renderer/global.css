@@ -1,0 +1,38 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  /* 允许页面根据内容自然增长，避免阻止滚动 */
+  height: auto;
+}
+
+body {
+  margin: 0 !important;
+  padding: 0 !important;
+  /* 视口满高起始，允许出现垂直滚动条 */
+  min-height: 100vh;
+  overflow-y: auto;
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  background: #0f172a;
+  color: #e2e8f0;
+}
+
+#app {
+  height: 100%;
+  width: 100%;
+}
+:root{
+  --sb-track: #0b0b0c;
+  --sb-thumb: #3a3a3c;
+}
+html{
+  scrollbar-width: thin;              /* Firefox + 新版 Chromium */
+  scrollbar-color: var(--sb-thumb) var(--sb-track);
+}
+@media (prefers-color-scheme: dark){
+  :root{ --sb-track:#111; --sb-thumb:#444; }
+}
+

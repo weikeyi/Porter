@@ -1,6 +1,6 @@
 {
   "name": "tilecopy",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "TileCopy - visualize and control copying of tile directory batches on Windows.",
@@ -12,7 +12,8 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "vue-tsc --noEmit",
-    "dist:win": "npm run build && electron-builder --win portable"
+    "deps": "set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& set ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/&& electron-builder install-app-deps",
+    "dist:win": "npm run build && set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& set ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/&& electron-builder --win portable"
   },
   "dependencies": {
     "electron-store": "^11.0.2",
@@ -41,8 +42,20 @@
       "dist-electron",
       "dist"
     ],
+    "extraResources": [
+      {
+        "from": "src/icon",
+        "to": "assets",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
     "extraMetadata": {
       "main": "dist-electron/main/index.js"
+    },
+    "electronDownload": {
+      "mirror": "https://npmmirror.com/mirrors/electron/"
     },
     "win": {
       "target": [
@@ -52,7 +65,8 @@
             "x64"
           ]
         }
-      ]
+      ],
+      "icon": "src/icon/icon.ico"
     }
   }
 }

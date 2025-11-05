@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import type { OpenDialogOptions } from 'electron';
 import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 import log, { initializeLogger } from './logger';
 import type { TileCopyJobRequest } from './types';
 import { tileCopyEngine } from './services/tilecopyEngine';
@@ -18,6 +19,28 @@ async function showOpenDialog(options: OpenDialogOptions) {
   return dialog.showOpenDialog(options);
 }
 
+function resolveAsset(file: string) {
+  if (app.isPackaged) {
+    // packaged: files copied to process.resourcesPath/assets via electron-builder extraResources
+    return join(process.resourcesPath, 'assets', file);
+  }
+  // dev: read directly from workspace src/icon
+  return join(process.cwd(), 'src', 'icon', file);
+}
+
+function resolveIconPath(): string | undefined {
+  if (process.platform === 'win32') {
+    const p = resolveAsset('icon.ico');
+    return existsSync(p) ? p : undefined;
+  }
+  if (process.platform === 'linux') {
+    const p = resolveAsset('icon.png');
+    return existsSync(p) ? p : undefined;
+  }
+  // macOS: BrowserWindow.icon 被忽略；请使用 .icns 并在打包配置应用图标
+  return undefined;
+}
+
 async function createWindow() {
   const window = new BrowserWindow({
     width: 1280,
@@ -30,7 +53,8 @@ async function createWindow() {
       preload: preloadPath,
       contextIsolation: true,
       sandbox: false
-    }
+    },
+    icon: resolveIconPath()
   });
 
   log.info('[main] BrowserWindow created');
@@ -45,9 +69,9 @@ async function createWindow() {
     window.focus();
   });
 
-  const devServerUrl = process.env.VITE_DEV_SERVER_URL;
-
-  if (devServerUrl && isDev) {
+  // In electron-vite, use environment variable or check for dev mode
+  if (isDev) {
+    const devServerUrl = process.env['VITE_DEV_SERVER_URL'] || 'http://localhost:5173';
     log.info('[main] loading dev server', devServerUrl);
     await window.loadURL(devServerUrl);
     window.webContents.openDevTools({ mode: 'detach' });
