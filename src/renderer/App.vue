@@ -83,6 +83,46 @@
             执行复制
           </button>
         </div>
+
+        <!-- 复制进度条 -->
+        <div class="copy-progress" v-if="isCopying || copyProgress">
+          <div class="progress-header">
+            <h3>复制进度</h3>
+            <span class="percentage">{{ copyProgress?.percentage.toFixed(1) || 0 }}%</span>
+          </div>
+          <div class="progress-bar-container">
+            <div
+              class="progress-bar"
+              :style="{ width: (copyProgress?.percentage || 0) + '%' }"
+            ></div>
+          </div>
+          <div class="progress-details">
+            <div class="detail-item">
+              <span class="label">当前文件:</span>
+              <span class="value">{{ copyProgress?.currentFile || '-' }}</span>
+            </div>
+            <div class="detail-item">
+              <span class="label">进度:</span>
+              <span class="value">
+                {{ copyProgress?.currentFileIndex || 0 }} / {{ copyProgress?.totalFiles || 0 }}
+              </span>
+            </div>
+            <div class="detail-item">
+              <span class="label">速度:</span>
+              <span class="value">{{ formatSpeed(copyProgress?.speedBytesPerSecond || 0) }}</span>
+            </div>
+            <div class="detail-item">
+              <span class="label">已传输:</span>
+              <span class="value">
+                {{ formatBytes(copyProgress?.bytesCopied || 0) }} / {{ formatBytes(copyProgress?.totalBytes || 0) }}
+              </span>
+            </div>
+            <div class="detail-item">
+              <span class="label">剩余时间:</span>
+              <span class="value">{{ formatTime(copyProgress?.estimatedRemainingSeconds) }}</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="panel results" v-if="preflightReports.length > 0">
@@ -251,6 +291,7 @@ import type {
   TileCopyJobRequest,
   PreflightReport,
   CopyOutcome,
+  CopyProgress,
 } from "#main/types";
 
 const form = reactive({
@@ -266,6 +307,8 @@ const runtimeStatus = ref<string>();
 const configInfo = ref<null | { path: string; detailCount: number }>(null);
 const preflightReports = ref<PreflightReport[]>([]);
 const copyOutcomes = ref<CopyOutcome[]>([]);
+const isCopying = ref(false);
+const copyProgress = ref<CopyProgress | null>(null);
 
 const jobRequest = computed<TileCopyJobRequest>(() => ({
   mainConfigPath: form.mainConfigPath.trim(),
@@ -372,15 +415,33 @@ async function handleCopy() {
 
   try {
     isBusy.value = true;
+    isCopying.value = true;
     runtimeStatus.value = "正在复制...";
+
+    // 设置进度监听器
+    window.tilecopy.onCopyProgress((progress) => {
+      copyProgress.value = progress;
+    });
 
     const outcome = await window.tilecopy.executeCopy(jobRequest.value);
     copyOutcomes.value = outcome;
     runtimeStatus.value = "复制流程完成";
   } catch (error) {
     runtimeStatus.value = formatError(error);
+    // 如果出错，也可以显示错误信息
+    if (copyProgress.value) {
+      copyProgress.value = {
+        ...copyProgress.value,
+        stage: 'error',
+        errorMessage: error instanceof Error ? error.message : '未知错误'
+      };
+    }
   } finally {
     isBusy.value = false;
+    // 复制完成后保留最终进度
+    setTimeout(() => {
+      isCopying.value = false;
+    }, 2000);
   }
 }
 
@@ -393,6 +454,18 @@ function formatBytes(bytes: number) {
   );
   const value = bytes / 1024 ** exponent;
   return `${value.toFixed(exponent === 0 ? 0 : 1)} ${units[exponent]}`;
+}
+
+function formatSpeed(bytesPerSecond: number) {
+  if (bytesPerSecond === 0) return "0 B/s";
+  return formatBytes(bytesPerSecond) + "/s";
+}
+
+function formatTime(seconds?: number) {
+  if (!seconds || seconds < 0) return "-";
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}分${secs}秒`;
 }
 
 function statusLabel(status: "missing" | "exists" | "duplicate") {
@@ -700,5 +773,120 @@ ul {
 
 li {
   color: rgba(226, 232, 240, 0.9);
+}
+
+/* 复制进度条样式 */
+.copy-progress {
+  margin-top: 1.5rem;
+  padding: 1.25rem;
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 12px;
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.progress-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #38bdf8;
+}
+
+.progress-header .percentage {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #4ade80;
+}
+
+.progress-bar-container {
+  width: 100%;
+  height: 12px;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 999px;
+  overflow: hidden;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #38bdf8, #0ea5e9);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.6);
+  position: relative;
+  overflow: hidden;
+}
+
+.progress-bar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.3),
+    transparent
+  );
+  animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.progress-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.5rem;
+  background: rgba(15, 23, 42, 0.6);
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.detail-item .label {
+  font-size: 0.78rem;
+  color: rgba(148, 163, 184, 0.8);
+  font-weight: 500;
+}
+
+.detail-item .value {
+  font-size: 0.95rem;
+  color: #e2e8f0;
+  font-weight: 600;
+  word-break: break-all;
 }
 </style>

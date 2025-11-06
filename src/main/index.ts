@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import type { OpenDialogOptions } from 'electron';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
+import { EventEmitter } from 'node:events';
 import log, { initializeLogger } from './logger';
 import type { TileCopyJobRequest } from './types';
 import { tileCopyEngine } from './services/tilecopyEngine';
@@ -135,8 +136,28 @@ function registerIpcHandlers() {
     return tileCopyEngine.preflight(request);
   });
 
-  ipcMain.handle('tilecopy:execute-copy', async (_event, request: TileCopyJobRequest) => {
-    return tileCopyEngine.executeCopy(request);
+  ipcMain.handle('tilecopy:execute-copy', async (event, request: TileCopyJobRequest) => {
+    // 创建进度事件发射器
+    const progressEmitter = new EventEmitter();
+    const webContents = event.sender;
+
+    // 监听进度事件并发送给渲染进程
+    const progressListener = (progress: any) => {
+      webContents.send('tilecopy:copy-progress', progress);
+    };
+    progressEmitter.on('progress', progressListener);
+
+    // 设置进度发射器到引擎
+    tileCopyEngine.setProgressEmitter(progressEmitter);
+
+    try {
+      const results = await tileCopyEngine.executeCopy(request);
+      return results;
+    } finally {
+      // 清理事件监听器
+      progressEmitter.removeListener('progress', progressListener);
+      progressEmitter.removeAllListeners();
+    }
   });
 
   ipcMain.handle('tilecopy:select-main-config', async () => {

@@ -14,6 +14,7 @@ interface TileCopyAPI {
   executeCopy: (request: import('#main/types').TileCopyJobRequest) => Promise<
     import('#main/types').CopyOutcome[]
   >;
+  onCopyProgress: (callback: (progress: import('#main/types').CopyProgress) => void) => void;
   selectMainConfig: () => Promise<string | null>;
   selectSourceRoot: () => Promise<string | null>;
   selectTargetRoot: () => Promise<string | null>;

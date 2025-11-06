@@ -59,3 +59,17 @@ export interface TileCopyJobRequest {
   readonly overwrite: boolean;
   readonly ignoreCase: boolean;
 }
+
+export interface CopyProgress {
+  readonly stage: 'preparing' | 'copying' | 'completed' | 'error';
+  readonly currentFile?: string;
+  readonly currentFileIndex?: number;
+  readonly totalFiles?: number;
+  readonly bytesCopied: number;
+  readonly totalBytes: number;
+  readonly speedBytesPerSecond?: number;
+  readonly elapsedSeconds: number;
+  readonly estimatedRemainingSeconds?: number;
+  readonly percentage: number;
+  readonly errorMessage?: string;
+}
