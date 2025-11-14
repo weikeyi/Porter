@@ -111,9 +111,8 @@ export async function copyRange(
           });
         }
 
-        // 计算目标路径（在 rangeTargetPath 下创建与 match.name 对应的目录）
-        const targetRootDir = dirname(detail.rangeTargetPath);
-        const destination = join(targetRootDir, match.name);
+        // 计算目标路径：在目标根目录下创建 Data 子目录，再放置 match.name
+        const destination = join(dirname(detail.rangeTargetPath), 'Data', match.name);
         const parentDir = dirname(destination);
 
         try {
