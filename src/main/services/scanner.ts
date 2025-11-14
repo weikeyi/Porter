@@ -1,5 +1,5 @@
 import { readdir, stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import type { DetailConfig, DirectoryMatch, RangeScanReport, ScanFinding } from '../types';
 import { createNameNormalizer } from './configLoader';
 
@@ -8,6 +8,9 @@ export interface ScanOptions {
   readonly ignoreCase?: boolean;
   readonly maxDepth?: number;
   readonly measureSize?: boolean;
+  readonly discoverRangeSubRoot?: boolean;
+  readonly discoveryMaxDepth?: number;
+  readonly rootPath?: string;
 }
 
 const DEFAULT_IGNORES = new Set(['.git', 'node_modules', '.svn', '.hg']);
@@ -50,8 +53,9 @@ async function collectMatches(
   ].map((item) => normalizer(item)));
 
   const targetKeys = new Set(detail.matchKeys);
+  const startRoot = options.rootPath ?? detail.rangeSourcePath;
   const stack: Array<{ path: string; depth: number }> = [
-    { path: detail.rangeSourcePath, depth: 0 }
+    { path: startRoot, depth: 0 }
   ];
   const maxDepth = options.maxDepth ?? Number.POSITIVE_INFINITY;
 
@@ -78,22 +82,33 @@ async function collectMatches(
         }
 
         if (targetKeys.has(normalizedName)) {
-          const metadata = await stat(absolute);
-          const size = options.measureSize === false
-            ? 0
-            : (metadata.isDirectory() ? await calculateDirectorySize(absolute) : 0);
-          const match: DirectoryMatch = {
-            name: entry.name,
-            sourcePath: absolute,
-            sizeInBytes: size,
-            lastModified: metadata.mtimeMs
-          };
-
-          const bucket = matches.get(normalizedName);
-          if (bucket) {
-            bucket.push(match);
+          if (options.measureSize === false) {
+            const match: DirectoryMatch = {
+              name: entry.name,
+              sourcePath: absolute,
+              sizeInBytes: 0,
+              lastModified: 0
+            };
+            const bucket = matches.get(normalizedName);
+            if (bucket) {
+              bucket.push(match);
+            } else {
+              matches.set(normalizedName, [match]);
+            }
           } else {
-            matches.set(normalizedName, [match]);
+            const metadata = await stat(absolute);
+            const match: DirectoryMatch = {
+              name: entry.name,
+              sourcePath: absolute,
+              sizeInBytes: metadata.isDirectory() ? await calculateDirectorySize(absolute) : 0,
+              lastModified: metadata.mtimeMs
+            };
+            const bucket = matches.get(normalizedName);
+            if (bucket) {
+              bucket.push(match);
+            } else {
+              matches.set(normalizedName, [match]);
+            }
           }
         }
       }
@@ -107,11 +122,84 @@ export async function scanDetailRange(
   detail: DetailConfig,
   options: ScanOptions = {}
 ): Promise<RangeScanReport> {
+  async function directoryExists(path: string): Promise<boolean> {
+    try {
+      const s = await stat(path);
+      return s.isDirectory();
+    } catch {
+      return false;
+    }
+  }
+
+  // 计算实际扫描根：支持动态发现子根目录
+  const sourceRootParent = dirname(detail.rangeSourcePath);
+  let effectiveRoot = detail.rangeSourcePath;
+  if (options.discoverRangeSubRoot) {
+    const discovered = await discoverSubRoot(sourceRootParent, detail.rangeLabel, {
+      ignoreCase: options.ignoreCase ?? false,
+      ignoreDirectories: options.ignoreDirectories,
+      discoveryMaxDepth: options.discoveryMaxDepth ?? 4
+    });
+    if (discovered) {
+      effectiveRoot = discovered;
+    } else {
+      // 未找到子根，直接返回全部缺失的报告
+      const findings: ScanFinding[] = detail.directoryNames.map((name) => ({
+        directory: name,
+        status: 'missing',
+        matches: []
+      }));
+      return {
+        rangeLabel: detail.rangeLabel,
+        rangeSourcePath: effectiveRoot,
+        requestedNames: detail.directoryNames,
+        findings,
+        summary: {
+          totalRequested: detail.directoryNames.length,
+          matched: 0,
+          missing: detail.directoryNames.length,
+          duplicates: 0
+        }
+      };
+    }
+  }
+
+  // 如果有效根不存在，尝试回退到动态发现（即使未开启发现）
+  if (!(await directoryExists(effectiveRoot))) {
+    const discovered = await discoverSubRoot(sourceRootParent, detail.rangeLabel, {
+      ignoreCase: options.ignoreCase ?? false,
+      ignoreDirectories: options.ignoreDirectories,
+      discoveryMaxDepth: options.discoveryMaxDepth ?? 4
+    });
+    if (discovered) {
+      effectiveRoot = discovered;
+    } else {
+      const findings: ScanFinding[] = detail.directoryNames.map((name) => ({
+        directory: name,
+        status: 'missing',
+        matches: []
+      }));
+      return {
+        rangeLabel: detail.rangeLabel,
+        rangeSourcePath: effectiveRoot,
+        requestedNames: detail.directoryNames,
+        findings,
+        summary: {
+          totalRequested: detail.directoryNames.length,
+          matched: 0,
+          missing: detail.directoryNames.length,
+          duplicates: 0
+        }
+      };
+    }
+  }
+
   const matches = await collectMatches(detail, {
     ignoreCase: options.ignoreCase ?? false,
     ignoreDirectories: options.ignoreDirectories,
     maxDepth: options.maxDepth,
-    measureSize: options.measureSize
+    measureSize: options.measureSize,
+    rootPath: effectiveRoot
   });
 
   const findings: ScanFinding[] = [];
@@ -153,7 +241,7 @@ export async function scanDetailRange(
 
   return {
     rangeLabel: detail.rangeLabel,
-    rangeSourcePath: detail.rangeSourcePath,
+    rangeSourcePath: effectiveRoot,
     requestedNames: detail.directoryNames,
     findings,
     summary: {
@@ -163,4 +251,41 @@ export async function scanDetailRange(
       duplicates
     }
   };
+}
+
+async function discoverSubRoot(
+  startRoot: string,
+  rangeLabel: string,
+  options: Pick<ScanOptions, 'ignoreDirectories' | 'ignoreCase' | 'discoveryMaxDepth'>
+): Promise<string | null> {
+  const normalizer = createNameNormalizer(options.ignoreCase);
+  const target = normalizer(rangeLabel);
+  const ignoreSet = new Set([
+    ...DEFAULT_IGNORES,
+    ...(options.ignoreDirectories ?? [])
+  ].map((item) => normalizer(item)));
+
+  const queue: Array<{ path: string; depth: number }> = [{ path: startRoot, depth: 0 }];
+  const maxDepth = options.discoveryMaxDepth ?? 4;
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current) break;
+    const { path, depth } = current;
+    const entries = await readdir(path, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const normalizedName = normalizer(entry.name);
+      if (ignoreSet.has(normalizedName)) continue;
+      const absolute = join(path, entry.name);
+      // 首次命中直接返回
+      if (normalizedName === target) {
+        return absolute;
+      }
+      if (depth + 1 <= maxDepth) {
+        queue.push({ path: absolute, depth: depth + 1 });
+      }
+    }
+  }
+  return null;
 }

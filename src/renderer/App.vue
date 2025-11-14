@@ -75,6 +75,22 @@
             <input type="checkbox" v-model="form.measureSize" />
             <span>扫描时统计目录大小</span>
           </label>
+          <label class="flag">
+            <input type="checkbox" v-model="form.discoverRangeSubRoot" />
+            <span>动态发现区间子根目录</span>
+          </label>
+          <label>
+            <span>发现最大深度</span>
+            <div class="input-with-button">
+              <input
+                v-model.number="form.discoveryMaxDepth"
+                type="number"
+                min="1"
+                max="8"
+                placeholder="默认 4"
+              />
+            </div>
+          </label>
         </div>
         <div class="actions">
           <button :disabled="isBusy || !isFormValid" @click="handlePreflight">
@@ -92,7 +108,9 @@
         <div class="copy-progress" v-if="isCopying || copyProgress">
           <div class="progress-header">
             <h3>复制进度</h3>
-            <span class="percentage">{{ copyProgress?.percentage.toFixed(1) || 0 }}%</span>
+            <span class="percentage"
+              >{{ copyProgress?.percentage.toFixed(1) || 0 }}%</span
+            >
           </div>
           <div class="progress-bar-container">
             <div
@@ -103,27 +121,33 @@
           <div class="progress-details">
             <div class="detail-item">
               <span class="label">当前文件:</span>
-              <span class="value">{{ copyProgress?.currentFile || '-' }}</span>
+              <span class="value">{{ copyProgress?.currentFile || "-" }}</span>
             </div>
             <div class="detail-item">
               <span class="label">进度:</span>
               <span class="value">
-                {{ copyProgress?.currentFileIndex || 0 }} / {{ copyProgress?.totalFiles || 0 }}
+                {{ copyProgress?.currentFileIndex || 0 }} /
+                {{ copyProgress?.totalFiles || 0 }}
               </span>
             </div>
             <div class="detail-item" v-if="(copyProgress?.totalBytes || 0) > 0">
               <span class="label">速度:</span>
-              <span class="value">{{ formatSpeed(copyProgress?.speedBytesPerSecond || 0) }}</span>
+              <span class="value">{{
+                formatSpeed(copyProgress?.speedBytesPerSecond || 0)
+              }}</span>
             </div>
             <div class="detail-item" v-if="(copyProgress?.totalBytes || 0) > 0">
               <span class="label">已传输:</span>
               <span class="value">
-                {{ formatBytes(copyProgress?.bytesCopied || 0) }} / {{ formatBytes(copyProgress?.totalBytes || 0) }}
+                {{ formatBytes(copyProgress?.bytesCopied || 0) }} /
+                {{ formatBytes(copyProgress?.totalBytes || 0) }}
               </span>
             </div>
             <div class="detail-item" v-if="(copyProgress?.totalBytes || 0) > 0">
               <span class="label">剩余时间:</span>
-              <span class="value">{{ formatTime(copyProgress?.estimatedRemainingSeconds) }}</span>
+              <span class="value">{{
+                formatTime(copyProgress?.estimatedRemainingSeconds)
+              }}</span>
             </div>
           </div>
         </div>
@@ -212,7 +236,11 @@
                       v-for="match in finding.matches"
                       :key="match.sourcePath"
                     >
-                      {{ match.sizeInBytes > 0 ? formatBytes(match.sizeInBytes) : '-' }}
+                      {{
+                        match.sizeInBytes > 0
+                          ? formatBytes(match.sizeInBytes)
+                          : "-"
+                      }}
                     </span>
                   </template>
                   <span v-else class="muted">-</span>
@@ -305,6 +333,8 @@ const form = reactive({
   ignoreCase: true,
   overwrite: false,
   measureSize: true,
+  discoverRangeSubRoot: true,
+  discoveryMaxDepth: 4,
 });
 
 const isBusy = ref(false);
@@ -322,6 +352,8 @@ const jobRequest = computed<TileCopyJobRequest>(() => ({
   overwrite: form.overwrite,
   ignoreCase: form.ignoreCase,
   measureSize: form.measureSize,
+  discoverRangeSubRoot: form.discoverRangeSubRoot,
+  discoveryMaxDepth: form.discoveryMaxDepth,
 }));
 
 const isFormValid = computed(() => {
@@ -438,8 +470,8 @@ async function handleCopy() {
     if (copyProgress.value) {
       copyProgress.value = {
         ...copyProgress.value,
-        stage: 'error',
-        errorMessage: error instanceof Error ? error.message : '未知错误'
+        stage: "error",
+        errorMessage: error instanceof Error ? error.message : "未知错误",
       };
     }
   } finally {
@@ -842,7 +874,7 @@ li {
 }
 
 .progress-bar::after {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   left: 0;

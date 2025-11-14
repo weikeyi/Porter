@@ -46,7 +46,9 @@ export class TileCopyEngine {
     for (const detail of config.detailConfigs) {
       const scan = await scanDetailRange(detail, {
         ignoreCase: request.ignoreCase,
-        measureSize: request.measureSize
+        measureSize: request.measureSize,
+        discoverRangeSubRoot: request.discoverRangeSubRoot,
+        discoveryMaxDepth: request.discoveryMaxDepth
       });
 
       reports.push({
