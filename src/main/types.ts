@@ -58,6 +58,7 @@ export interface TileCopyJobRequest {
   readonly targetRoot: string;
   readonly overwrite: boolean;
   readonly ignoreCase: boolean;
+  readonly measureSize: boolean;
 }
 
 export interface CopyProgress {

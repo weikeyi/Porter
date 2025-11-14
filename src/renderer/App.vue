@@ -71,6 +71,10 @@
             <input type="checkbox" v-model="form.overwrite" />
             <span>目标已存在时覆盖</span>
           </label>
+          <label class="flag">
+            <input type="checkbox" v-model="form.measureSize" />
+            <span>扫描时统计目录大小</span>
+          </label>
         </div>
         <div class="actions">
           <button :disabled="isBusy || !isFormValid" @click="handlePreflight">
@@ -107,17 +111,17 @@
                 {{ copyProgress?.currentFileIndex || 0 }} / {{ copyProgress?.totalFiles || 0 }}
               </span>
             </div>
-            <div class="detail-item">
+            <div class="detail-item" v-if="(copyProgress?.totalBytes || 0) > 0">
               <span class="label">速度:</span>
               <span class="value">{{ formatSpeed(copyProgress?.speedBytesPerSecond || 0) }}</span>
             </div>
-            <div class="detail-item">
+            <div class="detail-item" v-if="(copyProgress?.totalBytes || 0) > 0">
               <span class="label">已传输:</span>
               <span class="value">
                 {{ formatBytes(copyProgress?.bytesCopied || 0) }} / {{ formatBytes(copyProgress?.totalBytes || 0) }}
               </span>
             </div>
-            <div class="detail-item">
+            <div class="detail-item" v-if="(copyProgress?.totalBytes || 0) > 0">
               <span class="label">剩余时间:</span>
               <span class="value">{{ formatTime(copyProgress?.estimatedRemainingSeconds) }}</span>
             </div>
@@ -208,7 +212,7 @@
                       v-for="match in finding.matches"
                       :key="match.sourcePath"
                     >
-                      {{ formatBytes(match.sizeInBytes) }}
+                      {{ match.sizeInBytes > 0 ? formatBytes(match.sizeInBytes) : '-' }}
                     </span>
                   </template>
                   <span v-else class="muted">-</span>
@@ -300,6 +304,7 @@ const form = reactive({
   targetRoot: "",
   ignoreCase: true,
   overwrite: false,
+  measureSize: true,
 });
 
 const isBusy = ref(false);
@@ -316,6 +321,7 @@ const jobRequest = computed<TileCopyJobRequest>(() => ({
   targetRoot: form.targetRoot.trim(),
   overwrite: form.overwrite,
   ignoreCase: form.ignoreCase,
+  measureSize: form.measureSize,
 }));
 
 const isFormValid = computed(() => {

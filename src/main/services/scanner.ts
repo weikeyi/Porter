@@ -7,6 +7,7 @@ export interface ScanOptions {
   readonly ignoreDirectories?: string[];
   readonly ignoreCase?: boolean;
   readonly maxDepth?: number;
+  readonly measureSize?: boolean;
 }
 
 const DEFAULT_IGNORES = new Set(['.git', 'node_modules', '.svn', '.hg']);
@@ -78,10 +79,13 @@ async function collectMatches(
 
         if (targetKeys.has(normalizedName)) {
           const metadata = await stat(absolute);
+          const size = options.measureSize === false
+            ? 0
+            : (metadata.isDirectory() ? await calculateDirectorySize(absolute) : 0);
           const match: DirectoryMatch = {
             name: entry.name,
             sourcePath: absolute,
-            sizeInBytes: metadata.isDirectory() ? await calculateDirectorySize(absolute) : 0,
+            sizeInBytes: size,
             lastModified: metadata.mtimeMs
           };
 
@@ -106,7 +110,8 @@ export async function scanDetailRange(
   const matches = await collectMatches(detail, {
     ignoreCase: options.ignoreCase ?? false,
     ignoreDirectories: options.ignoreDirectories,
-    maxDepth: options.maxDepth
+    maxDepth: options.maxDepth,
+    measureSize: options.measureSize
   });
 
   const findings: ScanFinding[] = [];

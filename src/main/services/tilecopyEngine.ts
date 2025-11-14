@@ -45,7 +45,8 @@ export class TileCopyEngine {
 
     for (const detail of config.detailConfigs) {
       const scan = await scanDetailRange(detail, {
-        ignoreCase: request.ignoreCase
+        ignoreCase: request.ignoreCase,
+        measureSize: request.measureSize
       });
 
       reports.push({
@@ -98,20 +99,23 @@ export class TileCopyEngine {
         ? (progress: CopyProgress) => {
             const elapsed = (Date.now() - startTime) / 1000;
             const bytesCopiedGlobal = baseBytesCopied + progress.bytesCopied;
-            const speed = bytesCopiedGlobal > 0 ? bytesCopiedGlobal / elapsed : 0;
-            const percentage = globalTotalBytes > 0 ? (bytesCopiedGlobal / globalTotalBytes) * 100 : 0;
+            const hasBytes = globalTotalBytes > 0;
+            const speed = hasBytes && bytesCopiedGlobal > 0 ? bytesCopiedGlobal / elapsed : undefined;
+            const currentIndex = baseFilesCompleted + (progress.currentFileIndex ?? 0);
+            const percentage = hasBytes
+              ? (bytesCopiedGlobal / globalTotalBytes) * 100
+              : (globalTotalFiles > 0 ? (currentIndex / globalTotalFiles) * 100 : 0);
 
-            // 将区间进度映射为全局进度
             const aggregated: CopyProgress = {
               stage: progress.stage === 'completed' && isLastRange ? 'completed' : progress.stage === 'preparing' ? 'preparing' : 'copying',
               currentFile: progress.currentFile,
-              currentFileIndex: baseFilesCompleted + (progress.currentFileIndex ?? 0),
+              currentFileIndex: currentIndex,
               totalFiles: globalTotalFiles,
               bytesCopied: bytesCopiedGlobal,
               totalBytes: globalTotalBytes,
               speedBytesPerSecond: speed,
               elapsedSeconds: elapsed,
-              estimatedRemainingSeconds: speed > 0 ? (globalTotalBytes - bytesCopiedGlobal) / speed : undefined,
+              estimatedRemainingSeconds: hasBytes && speed && speed > 0 ? (globalTotalBytes - bytesCopiedGlobal) / speed : undefined,
               percentage,
               errorMessage: progress.errorMessage,
             };
