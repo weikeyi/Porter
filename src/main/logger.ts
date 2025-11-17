@@ -8,7 +8,7 @@ export function initializeLogger() {
     const logDir = join(app.getPath('userData'), 'logs');
     ensureDirSync(logDir);
 
-    log.transports.file.resolvePath = () => join(logDir, `${getTimestamp()}.log`);
+    log.transports.file.resolvePathFn = () => join(logDir, `${getTimestamp()}.log`);
     log.transports.file.maxSize = 1024 * 1024 * 10; // 10 MB
     log.transports.console.level = 'info';
     log.info('[logger] 初始化完成，输出目录:', logDir);

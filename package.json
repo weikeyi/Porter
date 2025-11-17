@@ -1,6 +1,6 @@
 {
   "name": "tilecopy",
-  "version": "0.1.4",
+  "version": "0.1.6",
   "private": true,
   "type": "module",
   "description": "TileCopy - visualize and control copying of tile directory batches on Windows.",

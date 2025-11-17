@@ -332,7 +332,7 @@ const form = reactive({
   targetRoot: "",
   ignoreCase: true,
   overwrite: false,
-  measureSize: true,
+  measureSize: false,
   discoverRangeSubRoot: true,
   discoveryMaxDepth: 4,
 });
