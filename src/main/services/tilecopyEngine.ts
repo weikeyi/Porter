@@ -9,7 +9,7 @@ import type {
   TileCopyJobRequest
 } from '../types';
 import { parseMainConfig } from './configLoader';
-import { copyRange } from './copyService';
+import { processRange } from './copyService';
 import { scanDetailRange } from './scanner';
 import type { EventEmitter } from 'node:events';
 
@@ -28,7 +28,7 @@ export class TileCopyEngine {
     log.info('[engine] 解析主配置:', request.mainConfigPath);
     this.lastConfig = await parseMainConfig(request.mainConfigPath, {
       sourceRoot: request.sourceRoot,
-      targetRoot: request.targetRoot,
+      targetRoot: request.operation === 'delete' ? undefined : request.targetRoot,
       ignoreCase: request.ignoreCase
     });
 
@@ -126,8 +126,10 @@ export class TileCopyEngine {
           }
         : undefined;
 
-      const outcome = await copyRange(report.detail, report.scan, {
+      const outcome = await processRange(report.detail, report.scan, {
         overwrite: request.overwrite,
+        purgeTargetFirst: request.purgeTargetFirst,
+        operation: request.operation,
         progressCallback,
       });
 
@@ -166,17 +168,18 @@ export class TileCopyEngine {
       throw new Error('源目录路径必须为绝对路径。');
     }
 
-    if (!path.isAbsolute(request.targetRoot)) {
+    if (request.operation !== 'delete' && !path.isAbsolute(request.targetRoot)) {
       throw new Error('目标目录路径必须为绝对路径。');
     }
   }
 
   async pathsAccessible(request: TileCopyJobRequest) {
-    const [mainExists, sourceExists, targetExists] = await Promise.all([
+    const [mainExists, sourceExists] = await Promise.all([
       pathExists(request.mainConfigPath),
-      pathExists(request.sourceRoot),
-      pathExists(request.targetRoot)
+      pathExists(request.sourceRoot)
     ]);
+    const targetExists =
+      request.operation === 'delete' ? true : await pathExists(request.targetRoot);
 
     return {
       mainExists,

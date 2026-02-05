@@ -1,4 +1,4 @@
-import { createReadStream, createWriteStream, ensureDir, pathExists } from 'fs-extra';
+import { createReadStream, createWriteStream, ensureDir, pathExists, remove } from 'fs-extra';
 import { dirname, join, basename } from 'node:path';
 import log from '../logger';
 import type { CopyOutcome, CopyProgress, DetailConfig, RangeScanReport } from '../types';
@@ -14,7 +14,30 @@ import type { EventEmitter } from 'node:events';
 
 export interface CopyOptions {
   readonly overwrite?: boolean;
+  readonly purgeTargetFirst?: boolean;
   readonly progressCallback?: (progress: CopyProgress) => void;
+  readonly move?: boolean;
+}
+
+export interface ProcessOptions extends CopyOptions {
+  readonly operation?: 'copy' | 'move' | 'delete';
+}
+
+export async function processRange(
+  detail: DetailConfig,
+  scanReport: RangeScanReport,
+  options: ProcessOptions = {}
+): Promise<CopyOutcome> {
+  const operation = options.operation ?? 'copy';
+
+  if (operation === 'delete') {
+    return deleteRange(detail, scanReport, options);
+  }
+
+  return copyRange(detail, scanReport, {
+    ...options,
+    move: operation === 'move'
+  });
 }
 
 export async function copyRange(
@@ -24,6 +47,8 @@ export async function copyRange(
 ): Promise<CopyOutcome> {
   const progressCallback = options.progressCallback;
   const overwrite = options.overwrite ?? false;
+  const purgeTargetFirst = options.purgeTargetFirst ?? false;
+  const move = options.move ?? false;
   const startTime = Date.now();
 
   // 结果汇总数组，按项目结构填充
@@ -118,7 +143,19 @@ export async function copyRange(
         try {
           // 检查目标是否已存在；如果存在且不允许覆盖，则跳过并记录
           const alreadyExists = await pathExists(destination);
-          if (alreadyExists && !overwrite) {
+          if (alreadyExists && purgeTargetFirst) {
+            try {
+              await remove(destination);
+              log.warn('[copy] 已清理目标目录:', destination);
+            } catch (error) {
+              log.error('[copy] 清理目标目录失败:', destination, error);
+              failed.push({
+                name: finding.directory,
+                reason: error instanceof Error ? error.message : '清理目标目录失败'
+              });
+              break;
+            }
+          } else if (alreadyExists && !overwrite) {
             skippedExists.push({
               ...match,
               targetPath: destination
@@ -171,7 +208,8 @@ export async function copyRange(
                   percentage: totalBytes > 0 ? (bytesCopied / totalBytes) * 100 : 0
                 });
               }
-            }
+            },
+            move
           );
 
           // 复制成功，记录目标路径以供上层展示
@@ -218,51 +256,200 @@ export async function copyRange(
   };
 }
 
-// 流式复制函数，支持进度回调
+async function deleteRange(
+  detail: DetailConfig,
+  scanReport: RangeScanReport,
+  options: CopyOptions = {}
+): Promise<CopyOutcome> {
+  const progressCallback = options.progressCallback;
+  const startTime = Date.now();
+
+  const copied: CopyOutcome['copied'] = [];
+  const skippedExists: CopyOutcome['skippedExists'] = [];
+  const missing: CopyOutcome['missing'] = [];
+  const failed: CopyOutcome['failed'] = [];
+
+  const deletable = scanReport.findings.filter((f) => f.status === 'exists');
+  const totalFiles = deletable.length;
+  const totalBytes = deletable.reduce((sum, finding) => {
+    const [match] = finding.matches;
+    return sum + (match?.sizeInBytes || 0);
+  }, 0);
+
+  let bytesDeleted = 0;
+
+  if (progressCallback) {
+    progressCallback({
+      stage: 'preparing',
+      bytesCopied: 0,
+      totalBytes,
+      elapsedSeconds: 0,
+      percentage: 0
+    });
+  }
+
+  for (let index = 0; index < scanReport.findings.length; index++) {
+    const finding = scanReport.findings[index];
+    switch (finding.status) {
+      case 'missing': {
+        missing.push(finding.directory);
+        break;
+      }
+      case 'duplicate': {
+        failed.push({
+          name: finding.directory,
+          reason: '检测到重复匹配目录，请手动确认后再试。'
+        });
+        break;
+      }
+      case 'exists': {
+        const [match] = finding.matches;
+        if (!match) {
+          failed.push({
+            name: finding.directory,
+            reason: '扫描结果异常，未找到目录。'
+          });
+          break;
+        }
+
+        const currentFileName = match.name;
+
+        if (progressCallback) {
+          const elapsed = (Date.now() - startTime) / 1000;
+          const speed = bytesDeleted > 0 ? bytesDeleted / elapsed : 0;
+          progressCallback({
+            stage: 'copying',
+            currentFile: currentFileName,
+            currentFileIndex: index,
+            totalFiles,
+            bytesCopied: bytesDeleted,
+            totalBytes,
+            speedBytesPerSecond: speed,
+            elapsedSeconds: elapsed,
+            estimatedRemainingSeconds:
+              totalBytes > 0 && speed > 0 ? (totalBytes - bytesDeleted) / speed : undefined,
+            percentage:
+              totalBytes > 0
+                ? (bytesDeleted / totalBytes) * 100
+                : totalFiles > 0
+                ? (index / totalFiles) * 100
+                : 0
+          });
+        }
+
+        try {
+          await remove(match.sourcePath);
+          bytesDeleted += match.sizeInBytes || 0;
+          copied.push({
+            ...match,
+            targetPath: match.sourcePath
+          });
+          log.info('[delete] 完成:', match.sourcePath);
+        } catch (error) {
+          log.error('[delete] 失败:', match.sourcePath, error);
+          failed.push({
+            name: finding.directory,
+            reason: error instanceof Error ? error.message : '未知错误'
+          });
+        }
+
+        if (progressCallback) {
+          const elapsed = (Date.now() - startTime) / 1000;
+          const speed = bytesDeleted > 0 ? bytesDeleted / elapsed : 0;
+          const completedIndex = index + 1;
+          progressCallback({
+            stage: 'copying',
+            currentFile: currentFileName,
+            currentFileIndex: completedIndex,
+            totalFiles,
+            bytesCopied: bytesDeleted,
+            totalBytes,
+            speedBytesPerSecond: speed,
+            elapsedSeconds: elapsed,
+            estimatedRemainingSeconds:
+              totalBytes > 0 && speed > 0 ? (totalBytes - bytesDeleted) / speed : undefined,
+            percentage:
+              totalBytes > 0
+                ? (bytesDeleted / totalBytes) * 100
+                : totalFiles > 0
+                ? (completedIndex / totalFiles) * 100
+                : 0
+          });
+        }
+        break;
+      }
+    }
+  }
+
+  if (progressCallback) {
+    const elapsed = (Date.now() - startTime) / 1000;
+    const speed = bytesDeleted > 0 ? bytesDeleted / elapsed : 0;
+    progressCallback({
+      stage: 'completed',
+      currentFileIndex: totalFiles,
+      totalFiles,
+      bytesCopied: bytesDeleted,
+      totalBytes,
+      speedBytesPerSecond: speed,
+      elapsedSeconds: elapsed,
+      percentage: 100
+    });
+  }
+
+  return {
+    detail,
+    copied,
+    skippedExists,
+    missing,
+    failed
+  };
+}
+
+// 替换为 Robocopy 实现
+import { execRobocopy } from './robocopyAdapter';
+
 async function copyDirectoryWithProgress(
   source: string,
   destination: string,
   overwrite: boolean,
   directorySize: number,
-  onProgress: (bytes: number) => void
+  onProgress: (bytes: number) => void,
+  move = false
 ): Promise<void> {
-  // 对于目录，我们仍然使用 fs-extra.copy，但通过统计目录大小来更新进度
-  // 这里简化处理，假设目录复制是原子的，我们只更新一次进度
-  // 实际项目中可以使用更复杂的实现，如递归文件复制
+  const start = Date.now();
 
-  return new Promise((resolve, reject) => {
-    // 发送开始复制信号
+  // 对于 directorySize 很小的目录，Robocopy 的启动开销可能比复制本身还大
+  // 但为了简化逻辑和统一性，这里全部交给 Robocopy (除了空目录)
+
+  try {
+    // 确保目标父级存在 (Robocopy 会自动创建目标目录本身，但以防万一)
+    // await ensureDir(destination); // Robocopy creates the dir
+
+    // 通知开始
     onProgress(0);
 
-    // 使用简单的 copy，然后模拟进度更新
-    import('fs-extra').then(({ copy, pathExists }) => {
-      // 检查是否已存在
-      pathExists(destination).then(alreadyExists => {
-        if (alreadyExists && !overwrite) {
-          // 如果不覆盖，复制会失败，我们捕获这个错误
-          copy(source, destination, {
-            overwrite,
-            errorOnExist: true,
-            filter: (src) => !src.endsWith('.git') && !src.includes('node_modules')
-          }).then(() => {
-            onProgress(directorySize);
-            resolve();
-          }).catch(err => {
-            reject(err);
-          });
-        } else {
-          // 正常复制
-          copy(source, destination, {
-            overwrite,
-            filter: (src) => !src.endsWith('.git') && !src.includes('node_modules')
-          }).then(() => {
-            onProgress(directorySize);
-            resolve();
-          }).catch(err => {
-            reject(err);
-          });
-        }
-      });
+    // 执行 Robocopy
+    // overwrite 标志在这里对应的主要是 /MIR (镜像) 还是 /E (普通复制)
+    // 我们的业务逻辑是 "Merge/Update"，所以始终用 /E 即可。
+    // Robocopy 默认行为就是：如果源比目标新，则覆盖；否则跳过。这符合大多数 "overwrite=true" 的直觉。
+    // 如果 overwrite=false，我们很难在目录级别精确控制 "完全不覆盖任何文件"，
+    // 除非用 /XC (Exclude Changed) /XN (Exclude Newer) /XO (Exclude Older)。
+    // 简化起见，这里假设 overwrite=true 意为 "允许更新"，overwrite=false 意为 "通过上层逻辑跳过已存在的目录"。
+    // *注意*：上层 copyRange 已经根据 "overwrite" 和 "alreadyExists" 做了目录级的跳过判断。
+    // 所以进入这个函数时，意味着我们要么是新建目录，要么是确实需要合并/覆盖。
+
+    await execRobocopy(source, destination, {
+      threads: 32,
+      move
     });
-  });
+
+    // 完成后，一次性增加进度
+    onProgress(directorySize);
+
+    // log.info(`[copy] Robocopy finished for ${basename(destination)} in ${Date.now() - start}ms`);
+
+  } catch (err) {
+    log.error(`[copy] Robocopy failed for ${source}`, err);
+    throw err;
+  }
 }

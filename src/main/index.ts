@@ -165,8 +165,7 @@ function registerIpcHandlers() {
       title: '选择主配置文件',
       properties: ['openFile'],
       filters: [
-        { name: '文本文件', extensions: ['txt'] },
-        { name: '所有文件', extensions: ['*'] }
+        { name: '配置文件', extensions: ['txt', 'csv'] }
       ]
     });
 
