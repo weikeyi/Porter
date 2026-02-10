@@ -1,4 +1,4 @@
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, stat, readdir } from 'node:fs/promises';
 import { basename, dirname, extname, join } from 'node:path';
 import type { DetailConfig, ParsedMainConfig } from '../types';
 
@@ -57,16 +57,21 @@ async function readConfigEntries(filePath: string): Promise<string[]> {
   if (lines.length > 0) {
     const firstLine = lines[0].toLowerCase();
     // 智能识别标题行：如果包含常见表头关键字，则认为是标题并移除
-    // 关键词：tile_name, name, folder
-    // 同时也为了避免误伤真实目录名 (虽然很少有目录叫 Name/Folder，但为了保险，我们只匹配特定模式)
-    // 这里采用简单字符串包含匹配，因为对于 CSV/TXT 标题行，通常就是单纯的字段名
-    if (
-      firstLine.includes('tile_name') ||
-      firstLine === 'name' ||
-      firstLine === 'folder' ||
-      firstLine.startsWith('name,') || // CSV 情况
-      firstLine.startsWith('folder,')
-    ) {
+    // 增强版关键词逻辑：只要包含以下关键词，且不像是具体数据（虽然很难界定，但对于标题行通常比较明显）
+    const headerKeywords = [
+      'tile_name', 'name', 'folder', 'path', 'directory', 'dir',
+      'source', 'target', 'file',
+      '名称', '目录', '路径', '文件名', '文件夹'
+    ];
+
+    // 检查是否包含关键词
+    const hasKeyword = headerKeywords.some(kw => firstLine.includes(kw));
+
+    // 检查是否是 CSV 格式的标题（包含逗号）或者就是单纯的一句话
+    // 只要包含这些关键词，我们倾向于它是标题。
+    // 为了防止误伤（例如文件夹名叫 my_folder_backup），我们必须结合上下文吗？
+    // 用户明确要求“如果包含name, folder这些，就忽略掉”，所以我们放宽条件。
+    if (hasKeyword) {
       lines = lines.slice(1);
     }
   }
@@ -110,13 +115,53 @@ export async function parseMainConfig(
   const detailConfigs: DetailConfig[] = [];
   const errors: string[] = [];
 
-  if (!(await ensureFileExists(mainConfigPath))) {
+  let isDirectory = false;
+  try {
+    const stats = await stat(mainConfigPath);
+    isDirectory = stats.isDirectory();
+  } catch {
     return {
       mainConfigPath,
       detailConfigs: [],
-      errors: [`主配置文件不存在: ${mainConfigPath}`]
+      errors: [`主配置文件/目录不存在: ${mainConfigPath}`]
     };
   }
+
+  if (isDirectory) {
+    // 目录直接模式：读取子目录作为列表
+    const entries = await readdir(mainConfigPath, { withFileTypes: true });
+    // 过滤出目录名
+    const directoryNames = entries
+      .filter(dirent => dirent.isDirectory())
+      .map(dirent => dirent.name);
+
+    if (directoryNames.length === 0) {
+      errors.push(`选定的配置目录为空或不包含子目录: ${mainConfigPath}`);
+    } else {
+      const dirName = basename(mainConfigPath);
+      // 直接使用目录名作为 RangeLabel
+      const rangeLabel = extractRangeLabelFromName(dirName) || dirName;
+
+      const directConfig: DetailConfig = {
+        configPath: mainConfigPath,
+        rangeLabel: rangeLabel,
+        rangeSourcePath: sourceRoot, // 直接基于源根目录
+        rangeTargetPath: targetRoot, // 直接基于目标根目录
+        directoryNames: directoryNames,
+        matchKeys: directoryNames.map(createNameNormalizer(ignoreCase))
+      };
+
+      detailConfigs.push(directConfig);
+    }
+
+    return {
+      mainConfigPath,
+      detailConfigs,
+      errors
+    };
+  }
+
+  // --- 以下为原有文件处理逻辑 ---
 
   const configDir = dirname(mainConfigPath);
   const entries = await readConfigEntries(mainConfigPath);
@@ -183,3 +228,4 @@ export async function parseMainConfig(
     errors
   };
 }
+

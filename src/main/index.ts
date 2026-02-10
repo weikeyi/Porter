@@ -176,6 +176,19 @@ function registerIpcHandlers() {
     return result.filePaths[0];
   });
 
+  ipcMain.handle('tilecopy:select-main-config-directory', async () => {
+    const result = await showOpenDialog({
+      title: '选择主配置目录 (将子目录视为列表)',
+      properties: ['openDirectory']
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return null;
+    }
+
+    return result.filePaths[0];
+  });
+
   ipcMain.handle('tilecopy:select-source-root', async () => {
     const result = await showOpenDialog({
       title: '选择源目录 (Tile 根)',

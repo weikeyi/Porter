@@ -1,9 +1,9 @@
 {
-  "name": "tilecopy",
-  "version": "0.1.8",
+  "name": "porter",
+  "version": "0.1.9",
   "private": true,
   "type": "module",
-  "description": "TileCopy - visualize and control copying of tile directory batches on Windows.",
+  "description": "Porter - visualize and control folder copying on Windows.",
   "author": "",
   "license": "MIT",
   "main": "dist-electron/main/index.js",
@@ -33,8 +33,8 @@
     "vue-tsc": "^2.0.21"
   },
   "build": {
-    "appId": "com.tilecopy.app",
-    "productName": "TileCopy",
+    "appId": "com.porter.app",
+    "productName": "Porter",
     "directories": {
       "output": "release"
     },

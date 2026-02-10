@@ -2,8 +2,8 @@
   <main class="app-shell">
     <header class="app-bar">
       <div class="title">
-        <h1>TileCopy</h1>
-        <span class="tagline">批量 Tile 目录复制助手</span>
+        <h1>Porter</h1>
+        <span class="tagline">批量文件夹复制助手</span>
       </div>
       <p v-if="runtimeStatus" class="runtime-status">{{ runtimeStatus }}</p>
     </header>
@@ -18,15 +18,25 @@
             <div class="input-with-button">
               <input
                 v-model="form.mainConfigPath"
-                placeholder="例如：D\\projects\\txt\\Tile_Export.txt"
+                placeholder="例如：D\\projects\\txt\\Tile_Export.txt 或 D\\tiles\\A001"
               />
               <button
                 type="button"
                 class="ghost-button"
                 :disabled="isBusy"
                 @click="chooseMainConfig"
+                title="选择配置文件 (.txt/.csv)"
               >
                 选择文件
+              </button>
+              <button
+                type="button"
+                class="ghost-button"
+                :disabled="isBusy"
+                @click="chooseMainConfigDirectory"
+                title="选择目录作为配置列表"
+              >
+                选择目录
               </button>
             </div>
           </label>
@@ -500,6 +510,17 @@ async function chooseSourceRoot() {
   const selected = await window.tilecopy.selectSourceRoot();
   if (selected) {
     form.sourceRoot = selected;
+  }
+}
+
+async function chooseMainConfigDirectory() {
+  if (!window.tilecopy) {
+    return;
+  }
+
+  const selected = await window.tilecopy.selectMainConfigDirectory();
+  if (selected) {
+    form.mainConfigPath = selected;
   }
 }
 

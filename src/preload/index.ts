@@ -19,6 +19,7 @@ export interface TileCopyAPI {
   executeCopy: (request: TileCopyJobRequest) => Promise<CopyOutcome[]>;
   onCopyProgress: (callback: (progress: CopyProgress) => void) => void;
   selectMainConfig: () => Promise<string | null>;
+  selectMainConfigDirectory: () => Promise<string | null>;
   selectSourceRoot: () => Promise<string | null>;
   selectTargetRoot: () => Promise<string | null>;
 }
@@ -36,6 +37,7 @@ const api: TileCopyAPI = {
     ipcRenderer.on('tilecopy:copy-progress', listener);
   },
   selectMainConfig: () => ipcRenderer.invoke('tilecopy:select-main-config'),
+  selectMainConfigDirectory: () => ipcRenderer.invoke('tilecopy:select-main-config-directory'),
   selectSourceRoot: () => ipcRenderer.invoke('tilecopy:select-source-root'),
   selectTargetRoot: () => ipcRenderer.invoke('tilecopy:select-target-root')
 };

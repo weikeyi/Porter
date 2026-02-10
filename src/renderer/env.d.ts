@@ -16,6 +16,7 @@ interface TileCopyAPI {
   >;
   onCopyProgress: (callback: (progress: import('#main/types').CopyProgress) => void) => void;
   selectMainConfig: () => Promise<string | null>;
+  selectMainConfigDirectory: () => Promise<string | null>;
   selectSourceRoot: () => Promise<string | null>;
   selectTargetRoot: () => Promise<string | null>;
 }
@@ -26,4 +27,4 @@ declare global {
   }
 }
 
-export {};
+export { };
