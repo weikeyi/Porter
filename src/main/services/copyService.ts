@@ -136,8 +136,8 @@ export async function copyRange(
           });
         }
 
-        // 计算目标路径：在目标根目录下创建 Data 子目录，再放置 match.name
-        const destination = join(dirname(detail.rangeTargetPath), 'Data', match.name);
+        // 计算目标路径：放置到对应的区间目标目录下
+        const destination = join(detail.rangeTargetPath, match.name);
         const parentDir = dirname(destination);
 
         try {
@@ -332,8 +332,8 @@ async function deleteRange(
               totalBytes > 0
                 ? (bytesDeleted / totalBytes) * 100
                 : totalFiles > 0
-                ? (index / totalFiles) * 100
-                : 0
+                  ? (index / totalFiles) * 100
+                  : 0
           });
         }
 
@@ -372,8 +372,8 @@ async function deleteRange(
               totalBytes > 0
                 ? (bytesDeleted / totalBytes) * 100
                 : totalFiles > 0
-                ? (completedIndex / totalFiles) * 100
-                : 0
+                  ? (completedIndex / totalFiles) * 100
+                  : 0
           });
         }
         break;

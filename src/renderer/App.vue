@@ -125,17 +125,15 @@
             <input type="checkbox" v-model="form.ignoreCase" />
             <span>忽略目录名大小写</span>
           </label>
-          <label class="flag">
-            <input type="checkbox" v-model="form.overwrite" />
-            <span>目标已存在时覆盖</span>
-          </label>
-          <label class="flag">
-            <input
-              type="checkbox"
-              v-model="form.purgeTargetFirst"
-              :disabled="form.operation === 'delete'"
-            />
-            <span>目标已存在时先删除目标目录</span>
+          <label class="control-select">
+            <span>目标已存在时策略</span>
+            <div class="input-with-button">
+              <select v-model="form.conflictStrategy" :disabled="form.operation === 'delete'">
+                <option value="skip">跳过已存在</option>
+                <option value="overwrite">覆盖并合并</option>
+                <option value="purge">先删除旧目录再复制</option>
+              </select>
+            </div>
           </label>
           <label class="flag">
             <input type="checkbox" v-model="form.measureSize" />
@@ -397,8 +395,7 @@ const form = reactive({
   sourceRoot: "",
   targetRoot: "",
   ignoreCase: false,
-  overwrite: false,
-  purgeTargetFirst: false,
+  conflictStrategy: "skip" as "skip" | "overwrite" | "purge",
   measureSize: false,
   discoverRangeSubRoot: false,
   discoveryMaxDepth: 4,
@@ -418,8 +415,8 @@ const jobRequest = computed<TileCopyJobRequest>(() => ({
   sourceRoot: form.sourceRoot.trim(),
   // 删除模式下目标目录可为空，传空字符串由后端忽略
   targetRoot: form.operation === "delete" ? "" : form.targetRoot.trim(),
-  overwrite: form.overwrite,
-  purgeTargetFirst: form.purgeTargetFirst,
+  overwrite: form.conflictStrategy === "overwrite",
+  purgeTargetFirst: form.conflictStrategy === "purge",
   ignoreCase: form.ignoreCase,
   measureSize: form.measureSize,
   discoverRangeSubRoot: form.discoverRangeSubRoot,
@@ -637,8 +634,7 @@ function handleReset() {
   form.sourceRoot = "";
   form.targetRoot = "";
   form.ignoreCase = true;
-  form.overwrite = false;
-  form.purgeTargetFirst = false;
+  form.conflictStrategy = "skip";
   form.measureSize = false;
   form.discoverRangeSubRoot = true;
   form.discoveryMaxDepth = 4;
