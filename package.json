@@ -1,6 +1,6 @@
 {
   "name": "porter",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "private": true,
   "type": "module",
   "description": "Porter - visualize and control folder copying on Windows.",
@@ -13,7 +13,9 @@
     "preview": "electron-vite preview",
     "typecheck": "vue-tsc --noEmit",
     "deps": "set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& set ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/&& electron-builder install-app-deps",
-    "dist:win": "npm run build && set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& set ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/&& electron-builder --win portable"
+    "dist:win": "npm run build && set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& set ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/&& electron-builder --win",
+    "dist:win:portable": "npm run build && set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& set ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/&& electron-builder --win portable",
+    "dist:win:nsis": "npm run build && set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& set ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/&& electron-builder --win nsis"
   },
   "dependencies": {
     "electron-store": "^11.0.2",
@@ -35,6 +37,7 @@
   "build": {
     "appId": "com.porter.app",
     "productName": "Porter",
+    "compression": "store",
     "directories": {
       "output": "release"
     },
@@ -60,6 +63,12 @@
     "win": {
       "target": [
         {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
           "target": "portable",
           "arch": [
             "x64"
@@ -67,6 +76,9 @@
         }
       ],
       "icon": "src/icon/icon.ico"
+    },
+    "portable": {
+      "unpackDirName": "Porter"
     }
   }
 }

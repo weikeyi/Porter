@@ -1,21 +1,36 @@
 <template>
   <main class="app-shell">
-    <header class="app-bar">
-      <div class="title">
+    <header class="topbar">
+      <div class="topbar-title">
         <h1>Porter</h1>
-        <span class="tagline">批量文件夹复制助手</span>
+        <p>Tile 目录批量处理</p>
       </div>
-      <p v-if="runtimeStatus" class="runtime-status">{{ runtimeStatus }}</p>
+      <div class="topbar-status">
+        <span class="section-label">状态</span>
+        <strong :class="['status-text', runtimeTone]">
+          {{ runtimeStatus || "等待操作" }}
+        </strong>
+      </div>
     </header>
 
     <section class="content">
-      <!-- 路径配置面板 -->
-      <div class="panel path-config">
-        <h2>路径配置</h2>
-        <div class="form-cols">
-          <label>
-            <span>主配置文件</span>
-            <div class="input-with-button">
+      <div class="panel config-panel">
+        <div class="panel-header">
+          <div>
+            <h2>配置</h2>
+            <p v-if="configInfo?.path" class="panel-subtext" :title="configInfo.path">
+              {{ formatPathPreview(configInfo.path, 96) }}
+            </p>
+          </div>
+          <span v-if="configInfo" class="panel-tag">
+            {{ configInfo.detailCount }} 个区间
+          </span>
+        </div>
+
+        <div class="field-list">
+          <label class="field-block">
+            <span class="field-label">主配置文件</span>
+            <div class="field-control">
               <input
                 v-model="form.mainConfigPath"
                 placeholder="例如：D\\projects\\txt\\Tile_Export.txt 或 D\\tiles\\A001"
@@ -40,9 +55,10 @@
               </button>
             </div>
           </label>
-          <label>
-            <span>源目录 (Tile 根)</span>
-            <div class="input-with-button">
+
+          <label class="field-block">
+            <span class="field-label">源目录</span>
+            <div class="field-control">
               <input
                 v-model="form.sourceRoot"
                 placeholder="例如：D\\tiles\\source"
@@ -57,9 +73,10 @@
               </button>
             </div>
           </label>
-          <label>
-            <span>目标目录</span>
-            <div class="input-with-button">
+
+          <label class="field-block">
+            <span class="field-label">目标目录</span>
+            <div class="field-control">
               <input
                 v-model="form.targetRoot"
                 :disabled="form.operation === 'delete'"
@@ -81,72 +98,101 @@
             </div>
           </label>
         </div>
-      </div>
 
-      <!-- 策略配置面板 -->
-      <div class="panel strategy-config">
-        <h2>策略配置</h2>
-        <div class="form-grid">
-          <label class="control-select">
-            <span>操作类型</span>
-            <div class="input-with-button">
-              <select v-model="form.operation">
-                <option value="copy">复制</option>
-                <option value="move">移动</option>
-                <option value="delete">删除</option>
-              </select>
+        <div class="config-grid">
+          <div class="option-block option-block-wide">
+            <span class="field-label">操作类型</span>
+            <div class="mode-tabs">
+              <button
+                type="button"
+                :class="['mode-tab', { active: form.operation === 'copy' }]"
+                @click="form.operation = 'copy'"
+              >
+                复制
+              </button>
+              <button
+                type="button"
+                :class="['mode-tab', { active: form.operation === 'move' }]"
+                @click="form.operation = 'move'"
+              >
+                移动
+              </button>
+              <button
+                type="button"
+                :class="['mode-tab', 'danger', { active: form.operation === 'delete' }]"
+                @click="form.operation = 'delete'"
+              >
+                删除
+              </button>
             </div>
-          </label>
-
-          <div class="mixed-control-group">
-            <label class="flag">
-              <span>动态发现子目录</span>
-              <input type="checkbox" v-model="form.discoverRangeSubRoot" />
-            </label>
-            <label
-              class="inline-input"
-              :class="{ disabled: !form.discoverRangeSubRoot }"
-            >
-              <span>发现最大深度</span>
-              <div class="input-with-button">
-                <input
-                  v-model.number="form.discoveryMaxDepth"
-                  type="number"
-                  min="1"
-                  max="8"
-                  placeholder="默认 4"
-                  :disabled="!form.discoverRangeSubRoot"
-                />
-              </div>
-            </label>
           </div>
 
-          <label class="flag">
+          <label class="option-block">
+            <span class="field-label">目标已存在时策略</span>
+            <select
+              v-model="form.conflictStrategy"
+              :disabled="form.operation === 'delete'"
+            >
+              <option value="skip">跳过已存在</option>
+              <option value="overwrite">覆盖并合并</option>
+              <option value="purge">先删除旧目录再复制</option>
+            </select>
+          </label>
+
+          <label class="option-block">
+            <span class="field-label">发现最大深度</span>
+            <input
+              v-model.number="form.discoveryMaxDepth"
+              type="number"
+              min="1"
+              max="8"
+              :disabled="!form.discoverRangeSubRoot"
+            />
+          </label>
+        </div>
+
+        <div class="check-row">
+          <label class="check-item">
+            <input type="checkbox" v-model="form.discoverRangeSubRoot" />
+            <span>动态发现子目录</span>
+          </label>
+          <label class="check-item">
             <input type="checkbox" v-model="form.ignoreCase" />
             <span>忽略目录名大小写</span>
           </label>
-          <label class="control-select">
-            <span>目标已存在时策略</span>
-            <div class="input-with-button">
-              <select v-model="form.conflictStrategy" :disabled="form.operation === 'delete'">
-                <option value="skip">跳过已存在</option>
-                <option value="overwrite">覆盖并合并</option>
-                <option value="purge">先删除旧目录再复制</option>
-              </select>
-            </div>
-          </label>
-          <label class="flag">
+          <label class="check-item">
             <input type="checkbox" v-model="form.measureSize" />
             <span>扫描时统计目录大小</span>
           </label>
         </div>
-        
-        <div class="actions">
+
+        <p v-if="form.operation === 'delete'" class="inline-note danger">
+          删除模式不会使用目标目录，请先预检确认范围。
+        </p>
+
+        <div
+          v-if="isPreflightStale || configErrors.length > 0"
+          class="inline-alerts"
+        >
+          <p v-if="isPreflightStale" class="alert-line warn">
+            当前配置已变更，请重新预检后再执行。
+          </p>
+          <div v-if="configErrors.length > 0" class="alert-block danger">
+            <strong>配置存在问题</strong>
+            <ul>
+              <li v-for="error in configErrors" :key="error">
+                {{ error }}
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="action-row">
           <button :disabled="isBusy || !isFormValid" @click="handlePreflight">
             预检
           </button>
           <button
-            :disabled="isBusy || preflightReports.length === 0"
+            :disabled="!canExecuteAction"
             :class="actionClass"
             @click="handleCopy"
           >
@@ -163,87 +209,78 @@
         </div>
       </div>
 
-        <!-- 复制进度条 -->
-        <div class="copy-progress" v-if="isCopying || copyProgress">
-          <div class="progress-header">
-            <h3>{{ operationLabel }}进度</h3>
-            <span class="percentage"
-              >{{ copyProgress?.percentage.toFixed(1) || 0 }}%</span
-            >
+      <div class="panel progress-panel" v-if="isCopying || copyProgress">
+        <div class="panel-header">
+          <h2>{{ operationLabel }}进度</h2>
+          <span class="panel-tag">{{ progressStageLabel }}</span>
+        </div>
+
+        <div class="progress-summary">
+          <div class="summary-item">
+            <span>当前目录</span>
+            <strong>{{ copyProgress?.currentFile || "-" }}</strong>
           </div>
-          <div class="progress-bar-container">
-            <div
-              class="progress-bar"
-              :style="{ width: (copyProgress?.percentage || 0) + '%' }"
-            ></div>
+          <div class="summary-item">
+            <span>进度</span>
+            <strong>
+              {{ copyProgress?.currentFileIndex || 0 }} /
+              {{ copyProgress?.totalFiles || 0 }}
+            </strong>
           </div>
-          <div class="progress-details">
-            <div class="detail-item">
-              <span class="label">当前文件:</span>
-              <span class="value">{{ copyProgress?.currentFile || "-" }}</span>
-            </div>
-            <div class="detail-item">
-              <span class="label">进度:</span>
-              <span class="value">
-                {{ copyProgress?.currentFileIndex || 0 }} /
-                {{ copyProgress?.totalFiles || 0 }}
-              </span>
-            </div>
-            <div class="detail-item" v-if="(copyProgress?.totalBytes || 0) > 0">
-              <span class="label">速度:</span>
-              <span class="value">{{
-                formatSpeed(copyProgress?.speedBytesPerSecond || 0)
-              }}</span>
-            </div>
-            <div class="detail-item" v-if="(copyProgress?.totalBytes || 0) > 0">
-              <span class="label">已传输:</span>
-              <span class="value">
-                {{ formatBytes(copyProgress?.bytesCopied || 0) }} /
-                {{ formatBytes(copyProgress?.totalBytes || 0) }}
-              </span>
-            </div>
-            <div class="detail-item" v-if="(copyProgress?.totalBytes || 0) > 0">
-              <span class="label">剩余时间:</span>
-              <span class="value">{{
-                formatTime(copyProgress?.estimatedRemainingSeconds)
-              }}</span>
-            </div>
+          <div class="summary-item" v-if="(copyProgress?.totalBytes || 0) > 0">
+            <span>速度</span>
+            <strong>{{ formatSpeed(copyProgress?.speedBytesPerSecond || 0) }}</strong>
+          </div>
+          <div class="summary-item" v-if="(copyProgress?.totalBytes || 0) > 0">
+            <span>数据</span>
+            <strong>
+              {{ formatBytes(copyProgress?.bytesCopied || 0) }} /
+              {{ formatBytes(copyProgress?.totalBytes || 0) }}
+            </strong>
           </div>
         </div>
 
+        <div class="progress-track">
+          <div
+            class="progress-fill"
+            :style="{ width: (copyProgress?.percentage || 0) + '%' }"
+          ></div>
+        </div>
+      </div>
 
-      <div class="panel results" v-if="preflightReports.length > 0">
-        <h2>预检结果</h2>
-        <div class="summary">
-          <div class="card">
-            <strong>共计区间</strong>
-            <span>{{ preflightReports.length }}</span>
+      <div class="panel results-panel" v-if="preflightReports.length > 0">
+        <div class="panel-header">
+          <h2>预检结果</h2>
+          <span class="panel-tag">共 {{ preflightReports.length }} 个区间</span>
+        </div>
+
+        <div class="summary-row">
+          <div class="summary-item">
+            <span>待{{ operationLabel }}目录</span>
+            <strong>{{ totalRequested }}</strong>
           </div>
-          <div class="card">
-            <strong>待{{ operationLabel }}目录</strong>
-            <span>{{ totalRequested }}</span>
+          <div class="summary-item">
+            <span>缺失目录</span>
+            <strong>{{ totalMissing }}</strong>
           </div>
-          <div class="card warn" v-if="totalMissing > 0">
-            <strong>缺失目录</strong>
-            <span>{{ totalMissing }}</span>
-          </div>
-          <div class="card warn" v-if="totalDuplicates > 0">
-            <strong>重复匹配</strong>
-            <span>{{ totalDuplicates }}</span>
+          <div class="summary-item">
+            <span>重复匹配</span>
+            <strong>{{ totalDuplicates }}</strong>
           </div>
         </div>
 
         <details
           v-for="report in preflightReports"
           :key="report.detail.rangeLabel"
+          class="range-block"
           open
         >
           <summary>
             <div>
               <strong>{{ report.detail.rangeLabel }}</strong>
-              <span class="range-path">{{
-                report.detail.rangeSourcePath
-              }}</span>
+              <span class="range-path" :title="report.detail.rangeSourcePath">
+                {{ report.detail.rangeSourcePath }}
+              </span>
             </div>
             <div class="range-stats">
               <span>待处理 {{ report.scan.summary.totalRequested }}</span>
@@ -257,132 +294,173 @@
             </div>
           </summary>
 
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>目录名</th>
+                  <th>状态</th>
+                  <th>来源路径</th>
+                  <th>大小</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="finding in report.scan.findings"
+                  :key="finding.directory"
+                >
+                  <td>{{ finding.directory }}</td>
+                  <td>
+                    <span :class="['status-chip', finding.status]">
+                      {{ statusLabel(finding.status) }}
+                    </span>
+                  </td>
+                  <td>
+                    <template v-if="finding.matches.length > 0">
+                      <span
+                        v-for="match in finding.matches"
+                        :key="match.sourcePath"
+                        class="path-entry"
+                      >
+                        {{ match.sourcePath }}
+                      </span>
+                    </template>
+                    <span v-else class="path-entry muted">未找到</span>
+                  </td>
+                  <td>
+                    <template v-if="finding.matches.length > 0">
+                      <span
+                        v-for="match in finding.matches"
+                        :key="match.sourcePath"
+                        class="path-entry"
+                      >
+                        {{
+                          match.sizeInBytes > 0
+                            ? formatBytes(match.sizeInBytes)
+                            : "-"
+                        }}
+                      </span>
+                    </template>
+                    <span v-else class="muted">-</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
+      </div>
+
+      <div class="panel results-panel" v-if="copyOutcomes.length > 0">
+        <div class="panel-header">
+          <h2>{{ operationLabel }}结果</h2>
+          <span class="panel-tag">
+            {{ resultSuccessCount }} 成功 / {{ resultFailedCount }} 失败
+          </span>
+        </div>
+
+        <div class="summary-row">
+          <div class="summary-item">
+            <span>成功</span>
+            <strong>{{ resultSuccessCount }}</strong>
+          </div>
+          <div class="summary-item">
+            <span>已存在</span>
+            <strong>{{ resultSkippedCount }}</strong>
+          </div>
+          <div class="summary-item">
+            <span>缺失</span>
+            <strong>{{ resultMissingCount }}</strong>
+          </div>
+          <div class="summary-item">
+            <span>失败</span>
+            <strong>{{ resultFailedCount }}</strong>
+          </div>
+        </div>
+
+        <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>目录名</th>
-                <th>状态</th>
-                <th>来源路径</th>
-                <th>大小</th>
+                <th>区间</th>
+                <th>结果</th>
+                <th>详情</th>
               </tr>
             </thead>
             <tbody>
               <tr
-                v-for="finding in report.scan.findings"
-                :key="finding.directory"
+                v-for="outcome in copyOutcomes"
+                :key="outcome.detail.rangeLabel"
               >
-                <td>{{ finding.directory }}</td>
+                <td>{{ outcome.detail.rangeLabel }}</td>
                 <td>
-                  <span :class="['status-chip', finding.status]">
-                    {{ statusLabel(finding.status) }}
-                  </span>
+                  <div class="range-stats">
+                    <span class="ok" v-if="outcome.copied.length > 0">
+                      已{{ operationLabel }} {{ outcome.copied.length }}
+                    </span>
+                    <span
+                      class="missing"
+                      v-if="outcome.skippedExists.length > 0"
+                    >
+                      已存在 {{ outcome.skippedExists.length }}
+                    </span>
+                    <span
+                      class="missing"
+                      v-if="outcome.missing.length > 0"
+                    >
+                      缺失 {{ outcome.missing.length }}
+                    </span>
+                    <span
+                      class="duplicate"
+                      v-if="outcome.failed.length > 0"
+                    >
+                      失败 {{ outcome.failed.length }}
+                    </span>
+                  </div>
                 </td>
                 <td>
-                  <template v-if="finding.matches.length > 0">
-                    <span
-                      v-for="match in finding.matches"
-                      :key="match.sourcePath"
-                      class="path-entry"
+                  <ul class="result-list">
+                    <li
+                      v-for="copied in outcome.copied"
+                      :key="`copied-${copied.targetPath}`"
                     >
-                      {{ match.sourcePath }}
-                    </span>
-                  </template>
-                  <span v-else class="path-entry muted">未找到</span>
-                </td>
-                <td>
-                  <template v-if="finding.matches.length > 0">
-                    <span
-                      v-for="match in finding.matches"
-                      :key="match.sourcePath"
+                      <template v-if="form.operation === 'delete'">
+                        ✅ {{ copied.name }} (已删除)
+                      </template>
+                      <template v-else>
+                        ✅ {{ copied.name }} → {{ copied.targetPath }}
+                      </template>
+                    </li>
+                    <li
+                      v-for="skip in outcome.skippedExists"
+                      :key="`skip-${skip.targetPath}`"
                     >
-                      {{
-                        match.sizeInBytes > 0
-                          ? formatBytes(match.sizeInBytes)
-                          : "-"
-                      }}
-                    </span>
-                  </template>
-                  <span v-else class="muted">-</span>
+                      ⏭️ {{ skip.name }} (已存在)
+                    </li>
+                    <li
+                      v-for="missingName in outcome.missing"
+                      :key="`missing-${missingName}`"
+                    >
+                      ⚠️ {{ missingName }} (源目录缺失)
+                    </li>
+                    <li
+                      v-for="failure in outcome.failed"
+                      :key="`failed-${failure.name}-${failure.reason}`"
+                    >
+                      ❌ {{ failure.name }} ({{ failure.reason }})
+                    </li>
+                  </ul>
                 </td>
               </tr>
             </tbody>
           </table>
-        </details>
-      </div>
-
-      <div class="panel results" v-if="copyOutcomes.length > 0">
-        <h2>{{ operationLabel }}结果</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>区间</th>
-              <th>结果</th>
-              <th>详情</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="outcome in copyOutcomes"
-              :key="outcome.detail.rangeLabel"
-            >
-              <td>{{ outcome.detail.rangeLabel }}</td>
-              <td>
-                <span class="status-chip ok" v-if="outcome.copied.length > 0">
-                  已{{ operationLabel }} {{ outcome.copied.length }}
-                </span>
-                <span
-                  class="status-chip warn"
-                  v-if="outcome.skippedExists.length > 0"
-                >
-                  已存在 {{ outcome.skippedExists.length }}
-                </span>
-                <span
-                  class="status-chip missing"
-                  v-if="outcome.missing.length > 0"
-                >
-                  缺失 {{ outcome.missing.length }}
-                </span>
-                <span
-                  class="status-chip duplicate"
-                  v-if="outcome.failed.length > 0"
-                >
-                  失败 {{ outcome.failed.length }}
-                </span>
-              </td>
-              <td>
-                <ul>
-                  <li v-for="copied in outcome.copied" :key="copied.targetPath">
-                    <template v-if="form.operation === 'delete'">
-                      ✅ {{ copied.name }} (已删除)
-                    </template>
-                    <template v-else>
-                      ✅ {{ copied.name }} → {{ copied.targetPath }}
-                    </template>
-                  </li>
-                  <li
-                    v-for="skip in outcome.skippedExists"
-                    :key="skip.targetPath"
-                  >
-                    ⏭️ {{ skip.name }} (已存在)
-                  </li>
-                  <li v-for="missingName in outcome.missing" :key="missingName">
-                    ⚠️ {{ missingName }} (源目录缺失)
-                  </li>
-                  <li v-for="failure in outcome.failed" :key="failure.name">
-                    ❌ {{ failure.name }} ({{ failure.reason }})
-                  </li>
-                </ul>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        </div>
       </div>
     </section>
   </main>
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from "vue";
+import { computed, onBeforeUnmount, reactive, ref } from "vue";
 import type {
   TileCopyJobRequest,
   PreflightReport,
@@ -394,21 +472,24 @@ const form = reactive({
   mainConfigPath: "",
   sourceRoot: "",
   targetRoot: "",
-  ignoreCase: false,
+  ignoreCase: true,
   conflictStrategy: "skip" as "skip" | "overwrite" | "purge",
   measureSize: false,
-  discoverRangeSubRoot: false,
+  discoverRangeSubRoot: true,
   discoveryMaxDepth: 4,
   operation: "copy" as "copy" | "move" | "delete",
 });
 
 const isBusy = ref(false);
-const runtimeStatus = ref<string>();
+const runtimeStatus = ref<string | undefined>("启动中...");
 const configInfo = ref<null | { path: string; detailCount: number }>(null);
+const configErrors = ref<string[]>([]);
 const preflightReports = ref<PreflightReport[]>([]);
 const copyOutcomes = ref<CopyOutcome[]>([]);
 const isCopying = ref(false);
 const copyProgress = ref<CopyProgress | null>(null);
+const lastPreflightSignature = ref<string | null>(null);
+let removeCopyProgressListener: null | (() => void) = null;
 
 const jobRequest = computed<TileCopyJobRequest>(() => ({
   mainConfigPath: form.mainConfigPath.trim(),
@@ -423,6 +504,37 @@ const jobRequest = computed<TileCopyJobRequest>(() => ({
   discoveryMaxDepth: form.discoveryMaxDepth,
   operation: form.operation,
 }));
+
+const currentRequestSignature = computed(() =>
+  JSON.stringify({
+    mainConfigPath: jobRequest.value.mainConfigPath,
+    sourceRoot: jobRequest.value.sourceRoot,
+    targetRoot: jobRequest.value.targetRoot,
+    overwrite: jobRequest.value.overwrite,
+    purgeTargetFirst: jobRequest.value.purgeTargetFirst,
+    ignoreCase: jobRequest.value.ignoreCase,
+    measureSize: jobRequest.value.measureSize,
+    discoverRangeSubRoot: jobRequest.value.discoverRangeSubRoot ?? false,
+    discoveryMaxDepth: jobRequest.value.discoveryMaxDepth ?? null,
+    operation: jobRequest.value.operation,
+  })
+);
+
+const isPreflightStale = computed(
+  () =>
+    preflightReports.value.length > 0 &&
+    lastPreflightSignature.value !== currentRequestSignature.value
+);
+
+const hasConfigErrors = computed(() => configErrors.value.length > 0);
+
+const canExecuteAction = computed(
+  () =>
+    !isBusy.value &&
+    preflightReports.value.length > 0 &&
+    !isPreflightStale.value &&
+    !hasConfigErrors.value
+);
 
 const isFormValid = computed(() => {
   const request = jobRequest.value;
@@ -488,6 +600,51 @@ const totalDuplicates = computed(() =>
   )
 );
 
+const runtimeTone = computed(() => {
+  const value = runtimeStatus.value ?? "";
+  if (!value) return "neutral";
+  if (value.startsWith("错误")) return "danger";
+  if (value.includes("完成") || value.includes("就绪")) return "ok";
+  if (value.includes("预检") || value.includes("处理") || value.includes("删除")) {
+    return "active";
+  }
+  return "neutral";
+});
+
+const resultSuccessCount = computed(() =>
+  copyOutcomes.value.reduce((acc, outcome) => acc + outcome.copied.length, 0)
+);
+
+const resultSkippedCount = computed(() =>
+  copyOutcomes.value.reduce(
+    (acc, outcome) => acc + outcome.skippedExists.length,
+    0
+  )
+);
+
+const resultMissingCount = computed(() =>
+  copyOutcomes.value.reduce((acc, outcome) => acc + outcome.missing.length, 0)
+);
+
+const resultFailedCount = computed(() =>
+  copyOutcomes.value.reduce((acc, outcome) => acc + outcome.failed.length, 0)
+);
+
+const progressStageLabel = computed(() => {
+  switch (copyProgress.value?.stage) {
+    case "preparing":
+      return "准备中";
+    case "copying":
+      return "执行中";
+    case "completed":
+      return "已完成";
+    case "error":
+      return "执行异常";
+    default:
+      return "待开始";
+  }
+});
+
 async function chooseMainConfig() {
   if (!window.tilecopy) {
     return;
@@ -542,7 +699,11 @@ async function handlePreflight() {
   try {
     isBusy.value = true;
     runtimeStatus.value = "正在预检...";
+    configErrors.value = [];
+    lastPreflightSignature.value = null;
+    preflightReports.value = [];
     copyOutcomes.value = [];
+    copyProgress.value = null;
     console.log('[App] invoking tilecopy.loadConfig', jobRequest.value);
 
     const config = await window.tilecopy.loadConfig(jobRequest.value);
@@ -555,10 +716,18 @@ async function handlePreflight() {
       path: config.mainConfigPath,
       detailCount: config.detailConfigs.length,
     };
+    configErrors.value = config.errors;
     preflightReports.value = reports;
-    runtimeStatus.value = `已加载 ${reports.length} 个区间`;
+    lastPreflightSignature.value = currentRequestSignature.value;
+    runtimeStatus.value =
+      config.errors.length > 0
+        ? `已加载 ${reports.length} 个区间，但存在 ${config.errors.length} 条配置问题，请修复后再执行`
+        : `已加载 ${reports.length} 个区间`;
   } catch (error) {
     console.error('[App] preflight error', error);
+    configErrors.value = [];
+    lastPreflightSignature.value = null;
+    preflightReports.value = [];
     runtimeStatus.value = formatError(error);
   } finally {
     isBusy.value = false;
@@ -567,6 +736,16 @@ async function handlePreflight() {
 
 async function handleCopy() {
   if (!window.tilecopy || preflightReports.value.length === 0) {
+    return;
+  }
+
+  if (hasConfigErrors.value) {
+    runtimeStatus.value = "配置存在问题，请修复后重新预检。";
+    return;
+  }
+
+  if (isPreflightStale.value) {
+    runtimeStatus.value = "配置已变更，请重新预检后再执行。";
     return;
   }
 
@@ -592,7 +771,8 @@ async function handleCopy() {
     }...`;
 
     // 设置进度监听器
-    window.tilecopy.onCopyProgress((progress) => {
+    removeCopyProgressListener?.();
+    removeCopyProgressListener = window.tilecopy.onCopyProgress((progress) => {
       copyProgress.value = progress;
     });
 
@@ -610,6 +790,8 @@ async function handleCopy() {
       };
     }
   } finally {
+    removeCopyProgressListener?.();
+    removeCopyProgressListener = null;
     isBusy.value = false;
     // 复制完成后保留最终进度
     setTimeout(() => {
@@ -641,12 +823,21 @@ function handleReset() {
   form.operation = "copy"; // reset to default
 
   configInfo.value = null;
+  configErrors.value = [];
   preflightReports.value = [];
   copyOutcomes.value = [];
   copyProgress.value = null;
+  lastPreflightSignature.value = null;
+  removeCopyProgressListener?.();
+  removeCopyProgressListener = null;
   runtimeStatus.value = undefined;
   isCopying.value = false;
 }
+
+onBeforeUnmount(() => {
+  removeCopyProgressListener?.();
+  removeCopyProgressListener = null;
+});
 
 function formatBytes(bytes: number) {
   if (bytes === 0) return "0 B";
@@ -669,6 +860,15 @@ function formatTime(seconds?: number) {
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
   return `${mins}分${secs}秒`;
+}
+
+function formatPathPreview(value: string, maxLength = 42) {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  const tailLength = Math.max(18, maxLength - 4);
+  return `...${value.slice(-tailLength)}`;
 }
 
 function statusLabel(status: "missing" | "exists" | "duplicate") {
@@ -698,552 +898,519 @@ void (async () => {
 
 <style scoped>
 .app-shell {
-  display: flex;
-  flex-direction: column;
+  --bg: #111418;
+  --panel: #181c21;
+  --panel-muted: #14181d;
+  --line: #2a3138;
+  --line-strong: #39424c;
+  --text: #e7eaee;
+  --muted: #97a0aa;
+  --blue: #1d4ed8;
+  --blue-border: #2859b8;
+  --green-border: #2d6a43;
+  --orange-border: #85511a;
+  --red-border: #8c3434;
   min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
   font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
-  background: #0f172a;
-  color: #e2e8f0;
 }
 
-.app-bar {
+.topbar {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  padding: 1.5rem 2rem;
-  background: linear-gradient(135deg, #1f2937, #0f172a);
-  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
 }
 
-.title h1 {
+.topbar-title h1 {
   margin: 0;
-  font-size: 1.75rem;
+  font-size: 28px;
+  line-height: 1;
+  font-weight: 700;
 }
 
-.tagline {
+.topbar-title p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.topbar-status {
+  min-width: 260px;
+  border: 1px solid var(--line);
+  background: var(--panel-muted);
+  padding: 10px 12px;
+}
+
+.section-label,
+.field-label {
   display: block;
-  margin-top: 0.25rem;
-  font-size: 0.95rem;
-  color: rgba(226, 232, 240, 0.7);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
 }
 
-.runtime-status {
-  font-size: 0.95rem;
-  color: #38bdf8;
+.status-text {
+  display: block;
+  margin-top: 6px;
+  font-size: 15px;
+  line-height: 1.5;
+  font-weight: 700;
+}
+
+.status-text.ok {
+  color: #8fd0a4;
+}
+
+.status-text.active {
+  color: #9fc1ff;
+}
+
+.status-text.danger {
+  color: #f0a1a1;
+}
+
+.status-text.neutral {
+  color: var(--text);
 }
 
 .content {
-  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
-  padding: 1.5rem 2rem 3rem;
-  overflow-y: auto;
+  gap: 12px;
+  padding: 12px 20px 20px;
 }
 
 .panel {
-  background: rgba(15, 23, 42, 0.65);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 16px;
-  padding: 1.5rem;
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.4);
+  border: 1px solid var(--line);
+  background: var(--panel);
+  padding: 14px;
 }
 
-.panel h2 {
-  margin: 0 0 1rem;
-  font-size: 1.25rem;
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 
-.form-grid {
+.panel-header h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.panel-subtext {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.panel-tag,
+.status-chip,
+.range-stats span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 2px 8px;
+  border: 1px solid var(--line-strong);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  background: transparent;
+}
+
+.field-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 1.5rem;
+  gap: 10px;
 }
 
-.form-cols {
+.field-block,
+.option-block {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 6px;
 }
 
-label {
+.field-control {
   display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  font-size: 0.9rem;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
-input {
-  background: rgba(15, 23, 42, 0.8);
-  border: 1px solid rgba(100, 116, 139, 0.4);
-  border-radius: 8px;
-  padding: 0.6rem 0.8rem;
-  color: #e2e8f0;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
-  font-size: 0.95rem;
+.field-control input {
+  flex: 1 1 320px;
 }
 
-input:focus {
+.config-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) 140px;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.option-block-wide {
+  min-width: 0;
+}
+
+input,
+select {
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  background: var(--panel-muted);
+  color: var(--text);
+  font: inherit;
+}
+
+input::placeholder {
+  color: #6f7882;
+}
+
+input:focus,
+select:focus {
   outline: none;
-  border-color: #38bdf8;
-  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2);
+  border-color: #59636f;
 }
 
 input:disabled,
-select:disabled {
-  opacity: 0.6;
+select:disabled,
+button:disabled {
+  opacity: 0.55;
   cursor: not-allowed;
-}
-
-select {
-  background: rgba(15, 23, 42, 0.8);
-  border: 1px solid rgba(100, 116, 139, 0.4);
-  border-radius: 8px;
-  padding: 0.6rem 0.8rem;
-  color: #e2e8f0;
-  font-size: 0.95rem;
-}
-
-select:focus {
-  outline: none;
-  border-color: #38bdf8;
-  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2);
-}
-
-.input-with-button {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-}
-
-.input-with-button input {
-  flex: 1;
-}
-
-.input-with-button select {
-  flex: 1;
-}
-
-button.ghost-button {
-  background: transparent;
-  color: #38bdf8;
-  border: 1px solid rgba(56, 189, 248, 0.6);
-  border-radius: 8px;
-  padding: 0.55rem 1rem;
-  font-weight: 500;
-  box-shadow: none;
-  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
-}
-
-button.ghost-button:hover {
-  background: rgba(56, 189, 248, 0.15);
-  color: #0f172a;
-}
-
-button.ghost-button:disabled {
-  opacity: 0.6;
-  color: rgba(148, 163, 184, 0.8);
-  border-color: rgba(148, 163, 184, 0.4);
-  background: transparent;
-  cursor: not-allowed;
-}
-
-.flag {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.75rem 1rem;
-  border-radius: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.15);
-  background: rgba(30, 41, 59, 0.4);
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  user-select: none;
-}
-
-.flag:hover {
-  border-color: rgba(56, 189, 248, 0.5);
-  background: rgba(30, 41, 59, 0.8);
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.4);
-  transform: translateY(-2px);
-}
-
-.flag span {
-  flex: 1;
-  font-weight: 500;
-  font-size: 0.95rem;
-  color: rgba(226, 232, 240, 0.9);
-  transition: color 0.3s ease;
-}
-
-.flag:hover span {
-  color: #fff;
-}
-
-/* Toggle Switch Design */
-.flag input[type="checkbox"] {
-  appearance: none;
-  width: 44px;
-  height: 24px;
-  border-radius: 999px;
-  background: rgba(148, 163, 184, 0.3);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  position: relative;
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  flex-shrink: 0;
-  order: 1; /* Move switch to the right */
-}
-
-/* Thumb */
-.flag input[type="checkbox"]::after {
-  content: "";
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: #e2e8f0;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), background 0.3s ease;
-}
-
-/* Checked State */
-.flag input[type="checkbox"]:checked {
-  background: #38bdf8;
-  border-color: #38bdf8;
-  box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
-}
-
-.flag input[type="checkbox"]:checked::after {
-  transform: translateX(20px);
-  background: #fff;
-}
-
-/* Focus State */
-.flag input[type="checkbox"]:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.35);
-}
-
-/* Disabled State */
-.flag input[type="checkbox"]:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  filter: grayscale(1);
-}
-
-.flag input[type="checkbox"]:disabled + span {
-  color: rgba(148, 163, 184, 0.5);
-}
-
-.actions {
-  display: flex;
-  gap: 1rem;
-  margin-top: 1.25rem;
 }
 
 button {
-  background: #38bdf8;
-  color: #0f172a;
-  border: none;
-  padding: 0.75rem 1.5rem;
-  border-radius: 999px;
-  font-size: 1rem;
+  min-height: 38px;
+  padding: 8px 14px;
+  border: 1px solid var(--blue-border);
+  background: var(--blue);
+  color: #f8fafc;
+  font: inherit;
   font-weight: 600;
   cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
-}
-
-button.warn {
-  background: #fbbf24;
-  color: #0f172a;
-}
-
-button.danger {
-  background: #f87171;
-  color: #0f172a;
 }
 
 button:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 10px 18px rgba(56, 189, 248, 0.3);
+  background: #1e40af;
 }
 
-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  transform: none;
-  box-shadow: none;
+button.warn {
+  border-color: var(--orange-border);
+  background: #b45309;
 }
 
-.results details {
-  margin-top: 1rem;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 12px;
-  background: rgba(15, 23, 42, 0.9);
+button.warn:hover {
+  background: #92400e;
 }
 
-.results summary {
-  cursor: pointer;
-  user-select: none;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-  padding: 1rem 1.2rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+button.danger {
+  border-color: var(--red-border);
+  background: #b91c1c;
 }
 
-.range-path {
-  display: block;
-  font-size: 0.85rem;
-  color: rgba(148, 163, 184, 0.7);
+button.danger:hover {
+  background: #991b1b;
 }
 
-.range-stats {
-  display: flex;
-  gap: 0.75rem;
-  font-size: 0.9rem;
+.ghost-button {
+  border-color: var(--line-strong);
+  background: var(--panel-muted);
+  color: var(--text);
 }
 
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.9rem;
+.ghost-button:hover {
+  background: #1a1f25;
 }
 
-th,
-td {
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+.mode-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
 }
 
-thead {
-  background: rgba(30, 41, 59, 0.8);
-  text-align: left;
+.mode-tab {
+  border-color: var(--line-strong);
+  background: var(--panel-muted);
+  color: var(--text);
 }
 
-.status-chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.2rem 0.6rem;
-  border-radius: 999px;
-  font-size: 0.78rem;
+.mode-tab:hover {
+  background: #1a1f25;
 }
 
-.status-chip.exists,
-.status-chip.ok {
-  background: rgba(34, 197, 94, 0.2);
-  color: #4ade80;
+.mode-tab.active {
+  border-color: var(--blue-border);
+  background: #1a2d57;
 }
 
-.status-chip.missing,
-.status-chip.warn {
-  background: rgba(251, 191, 36, 0.2);
-  color: #fbbf24;
+.mode-tab.danger.active {
+  border-color: var(--red-border);
+  background: #3a1719;
 }
 
-.status-chip.duplicate {
-  background: rgba(248, 113, 113, 0.2);
-  color: #f87171;
-}
-
-.path-entry {
-  display: block;
-  word-break: break-all;
-  color: rgba(226, 232, 240, 0.9);
-}
-
-.muted {
-  color: rgba(148, 163, 184, 0.6);
-}
-
-.summary {
+.check-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 1rem;
-  margin: 1rem 0;
+  gap: 14px;
+  margin-top: 12px;
 }
 
-.summary .card {
-  min-width: 140px;
-  padding: 1rem 1.25rem;
-  background: rgba(30, 41, 59, 0.8);
-  border-radius: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  text-align: center;
+.check-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 13px;
 }
 
-.summary .card.warn {
-  border-color: rgba(248, 113, 113, 0.4);
+.check-item input {
+  width: 14px;
+  height: 14px;
+  min-height: auto;
+  padding: 0;
 }
 
-.summary .card strong {
+.inline-note {
+  margin: 12px 0 0;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  background: var(--panel-muted);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.inline-note.danger,
+.alert-block.danger {
+  border-color: var(--red-border);
+  background: #201314;
+  color: #f0a1a1;
+}
+
+.inline-alerts {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.alert-line,
+.alert-block {
+  padding: 10px;
+  border: 1px solid var(--line);
+  background: var(--panel-muted);
+  font-size: 13px;
+}
+
+.alert-line.warn {
+  border-color: var(--orange-border);
+  color: #f4bc73;
+}
+
+.alert-block strong {
   display: block;
-  margin-bottom: 0.35rem;
-  color: #e2e8f0;
+  margin-bottom: 6px;
 }
 
-.summary .card span {
-  font-size: 1.25rem;
-  font-weight: 600;
-}
-
-ul {
+.alert-block ul,
+.result-list {
   list-style: none;
   padding: 0;
   margin: 0;
   display: grid;
-  gap: 0.4rem;
+  gap: 6px;
 }
 
-li {
-  color: rgba(226, 232, 240, 0.9);
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
 }
 
-/* 复制进度条样式 */
-.copy-progress {
-  margin-top: 1.5rem;
-  padding: 1.25rem;
-  background: rgba(30, 41, 59, 0.6);
-  border: 1px solid rgba(56, 189, 248, 0.3);
-  border-radius: 12px;
-  animation: fadeIn 0.3s ease-in-out;
+.progress-summary,
+.summary-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
 }
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.summary-item {
+  border: 1px solid var(--line);
+  background: var(--panel-muted);
+  padding: 10px;
 }
 
-.progress-header {
+.summary-item span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.summary-item strong {
+  display: block;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.progress-track {
+  margin-top: 12px;
+  height: 10px;
+  border: 1px solid var(--line);
+  background: var(--panel-muted);
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--blue);
+  transition: width 0.2s ease;
+}
+
+.range-block {
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  background: var(--panel-muted);
+}
+
+.range-block summary {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px;
+  cursor: pointer;
+  user-select: none;
 }
 
-.progress-header h3 {
-  margin: 0;
-  font-size: 1.1rem;
-  color: #38bdf8;
+.range-block summary::-webkit-details-marker {
+  display: none;
 }
 
-.progress-header .percentage {
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: #4ade80;
-}
-
-.progress-bar-container {
-  width: 100%;
-  height: 12px;
-  background: rgba(15, 23, 42, 0.9);
-  border: 1px solid rgba(56, 189, 248, 0.3);
-  border-radius: 999px;
-  overflow: hidden;
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
-}
-
-.progress-bar {
-  height: 100%;
-  background: linear-gradient(90deg, #38bdf8, #0ea5e9);
-  border-radius: 999px;
-  transition: width 0.3s ease;
-  box-shadow: 0 0 10px rgba(56, 189, 248, 0.6);
-  position: relative;
-  overflow: hidden;
-}
-
-.progress-bar::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  right: 0;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255, 255, 255, 0.3),
-    transparent
-  );
-  animation: shimmer 2s infinite;
-}
-
-@keyframes shimmer {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(100%);
-  }
-}
-
-.progress-details {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 0.75rem;
-  margin-top: 1rem;
-}
-
-.detail-item {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  padding: 0.5rem;
-  background: rgba(15, 23, 42, 0.6);
-  border-radius: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.15);
-}
-
-.detail-item .label {
-  font-size: 0.78rem;
-  color: rgba(148, 163, 184, 0.8);
-  font-weight: 500;
-}
-
-.detail-item .value {
-  font-size: 0.95rem;
-  color: #e2e8f0;
-  font-weight: 600;
+.range-path {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
   word-break: break-all;
 }
 
-.mixed-control-group {
-  grid-column: 1 / -1;
+.range-stats {
   display: flex;
-  align-items: stretch;
-  gap: 1rem;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
-@media (max-width: 600px) {
-  .mixed-control-group {
+.range-stats .ok,
+.status-chip.ok,
+.status-chip.exists {
+  border-color: var(--green-border);
+  color: #8fd0a4;
+}
+
+.range-stats .missing,
+.status-chip.warn,
+.status-chip.missing {
+  border-color: var(--orange-border);
+  color: #f4bc73;
+}
+
+.range-stats .duplicate,
+.status-chip.duplicate {
+  border-color: var(--red-border);
+  color: #f0a1a1;
+}
+
+.table-wrap {
+  overflow: auto;
+  border-top: 1px solid var(--line);
+}
+
+table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+thead {
+  background: #14181d;
+  text-align: left;
+}
+
+th,
+td {
+  padding: 10px;
+  border-bottom: 1px solid #252c33;
+  vertical-align: top;
+}
+
+tbody tr:hover {
+  background: #1a1f25;
+}
+
+.path-entry,
+.result-list li {
+  display: block;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.muted {
+  color: #7f8791;
+}
+
+@media (max-width: 900px) {
+  .topbar,
+  .panel-header,
+  .range-block summary {
     flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .topbar-status {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .config-grid,
+  .progress-summary,
+  .summary-row {
+    grid-template-columns: 1fr;
   }
 }
 
-.inline-input {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 0.35rem;
-  min-width: 120px;
-  transition: opacity 0.2s ease;
-}
+@media (max-width: 640px) {
+  .topbar,
+  .content {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
 
-.inline-input.disabled {
-  opacity: 0.5;
-  pointer-events: none;
+  .field-control,
+  .action-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .mode-tabs {
+    grid-template-columns: 1fr;
+  }
+
+  button,
+  .ghost-button {
+    width: 100%;
+  }
+
+  table {
+    min-width: 600px;
+  }
 }
 </style>

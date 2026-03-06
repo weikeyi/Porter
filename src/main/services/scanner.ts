@@ -118,6 +118,27 @@ async function collectMatches(
   return matches;
 }
 
+function createAllMissingReport(detail: DetailConfig, rangeSourcePath: string): RangeScanReport {
+  const findings: ScanFinding[] = detail.directoryNames.map((name) => ({
+    directory: name,
+    status: 'missing',
+    matches: []
+  }));
+
+  return {
+    rangeLabel: detail.rangeLabel,
+    rangeSourcePath,
+    requestedNames: detail.directoryNames,
+    findings,
+    summary: {
+      totalRequested: detail.directoryNames.length,
+      matched: 0,
+      missing: detail.directoryNames.length,
+      duplicates: 0
+    }
+  };
+}
+
 export async function scanDetailRange(
   detail: DetailConfig,
   options: ScanOptions = {}
@@ -131,66 +152,28 @@ export async function scanDetailRange(
     }
   }
 
-  // 计算实际扫描根：支持动态发现子根目录
+  // 计算实际扫描根：仅对“区间路径模式”启用动态发现。
   const sourceRootParent = dirname(detail.rangeSourcePath);
   let effectiveRoot = detail.rangeSourcePath;
-  if (options.discoverRangeSubRoot) {
-    const discovered = await discoverSubRoot(sourceRootParent, detail.rangeLabel, {
-      ignoreCase: options.ignoreCase ?? false,
-      ignoreDirectories: options.ignoreDirectories,
-      discoveryMaxDepth: options.discoveryMaxDepth ?? 4
-    });
-    if (discovered) {
-      effectiveRoot = discovered;
-    } else {
-      // 未找到子根，直接返回全部缺失的报告
-      const findings: ScanFinding[] = detail.directoryNames.map((name) => ({
-        directory: name,
-        status: 'missing',
-        matches: []
-      }));
-      return {
-        rangeLabel: detail.rangeLabel,
-        rangeSourcePath: effectiveRoot,
-        requestedNames: detail.directoryNames,
-        findings,
-        summary: {
-          totalRequested: detail.directoryNames.length,
-          matched: 0,
-          missing: detail.directoryNames.length,
-          duplicates: 0
-        }
-      };
-    }
-  }
+  const shouldDiscoverSubRoot = Boolean(
+    options.discoverRangeSubRoot && detail.supportsRangeDiscovery
+  );
 
-  // 如果有效根不存在，尝试回退到动态发现（即使未开启发现）
   if (!(await directoryExists(effectiveRoot))) {
+    if (!shouldDiscoverSubRoot) {
+      return createAllMissingReport(detail, effectiveRoot);
+    }
+
     const discovered = await discoverSubRoot(sourceRootParent, detail.rangeLabel, {
       ignoreCase: options.ignoreCase ?? false,
       ignoreDirectories: options.ignoreDirectories,
       discoveryMaxDepth: options.discoveryMaxDepth ?? 4
     });
+
     if (discovered) {
       effectiveRoot = discovered;
     } else {
-      const findings: ScanFinding[] = detail.directoryNames.map((name) => ({
-        directory: name,
-        status: 'missing',
-        matches: []
-      }));
-      return {
-        rangeLabel: detail.rangeLabel,
-        rangeSourcePath: effectiveRoot,
-        requestedNames: detail.directoryNames,
-        findings,
-        summary: {
-          totalRequested: detail.directoryNames.length,
-          matched: 0,
-          missing: detail.directoryNames.length,
-          duplicates: 0
-        }
-      };
+      return createAllMissingReport(detail, effectiveRoot);
     }
   }
 

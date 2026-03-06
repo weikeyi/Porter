@@ -9,6 +9,24 @@ export interface ParseOptions {
 }
 
 const COMMENT_RE = /^\s*(#|\/\/)/;
+const SIMPLE_HEADER_TOKENS = new Set([
+  'tile_name',
+  'name',
+  'folder',
+  'path',
+  'directory',
+  'dir',
+  'source',
+  'target',
+  'file',
+  '名称',
+  '目录',
+  '路径',
+  '文件名',
+  '文件夹'
+]);
+const ENGLISH_HEADER_RE = /\b(tile_name|name|folder|path|directory|dir|source|target|file)\b/i;
+const CHINESE_HEADER_RE = /(名称|目录|路径|文件名|文件夹)/;
 
 export function normalizePathCasing(value: string, ignoreCase: boolean | undefined): string {
   return ignoreCase ? value.toLowerCase() : value;
@@ -20,6 +38,25 @@ export function createNameNormalizer(ignoreCase: boolean | undefined) {
 
 function sanitizeLine(line: string): string {
   return line.replace(/\r?\n$/, '').trim();
+}
+
+function isHeaderLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  const lower = trimmed.toLowerCase();
+  if (SIMPLE_HEADER_TOKENS.has(lower) || SIMPLE_HEADER_TOKENS.has(trimmed)) {
+    return true;
+  }
+
+  const hasDelimiter = /[,\t;]/.test(trimmed);
+  if (!hasDelimiter) {
+    return false;
+  }
+
+  return ENGLISH_HEADER_RE.test(lower) || CHINESE_HEADER_RE.test(trimmed);
 }
 
 export function extractRangeLabelFromName(fileName: string): string | null {
@@ -54,26 +91,8 @@ async function readConfigEntries(filePath: string): Promise<string[]> {
     .map(sanitizeLine)
     .filter((line) => line.length > 0 && !COMMENT_RE.test(line));
 
-  if (lines.length > 0) {
-    const firstLine = lines[0].toLowerCase();
-    // 智能识别标题行：如果包含常见表头关键字，则认为是标题并移除
-    // 增强版关键词逻辑：只要包含以下关键词，且不像是具体数据（虽然很难界定，但对于标题行通常比较明显）
-    const headerKeywords = [
-      'tile_name', 'name', 'folder', 'path', 'directory', 'dir',
-      'source', 'target', 'file',
-      '名称', '目录', '路径', '文件名', '文件夹'
-    ];
-
-    // 检查是否包含关键词
-    const hasKeyword = headerKeywords.some(kw => firstLine.includes(kw));
-
-    // 检查是否是 CSV 格式的标题（包含逗号）或者就是单纯的一句话
-    // 只要包含这些关键词，我们倾向于它是标题。
-    // 为了防止误伤（例如文件夹名叫 my_folder_backup），我们必须结合上下文吗？
-    // 用户明确要求“如果包含name, folder这些，就忽略掉”，所以我们放宽条件。
-    if (hasKeyword) {
-      lines = lines.slice(1);
-    }
+  if (lines.length > 0 && isHeaderLine(lines[0])) {
+    lines = lines.slice(1);
   }
 
   return lines;
@@ -102,6 +121,7 @@ async function parseDetailConfig(
     rangeLabel,
     rangeSourcePath,
     rangeTargetPath,
+    supportsRangeDiscovery: true,
     directoryNames,
     matchKeys
   };
@@ -147,6 +167,7 @@ export async function parseMainConfig(
         rangeLabel: rangeLabel,
         rangeSourcePath: sourceRoot, // 直接基于源根目录
         rangeTargetPath: targetRoot, // 直接基于目标根目录
+        supportsRangeDiscovery: false,
         directoryNames: directoryNames,
         matchKeys: directoryNames.map(createNameNormalizer(ignoreCase))
       };
@@ -184,8 +205,8 @@ export async function parseMainConfig(
     }
   }
 
-  // 启发式判断：如果超过 80% 的条目都不是文件，或者所有条目都不是文件，则认为是直接清单
-  const isDirectListMode = entries.length > 0 && (missingFileCount / entries.length) > 0.8;
+  // 仅当所有条目都不是现有文件时，才视为直接清单，避免把格式错误的主配置静默当成目录列表。
+  const isDirectListMode = entries.length > 0 && missingFileCount === entries.length;
 
   if (isDirectListMode) {
     // 直接清单模式：把整个主配置视为一个大的 DetailConfig
@@ -198,6 +219,7 @@ export async function parseMainConfig(
       rangeLabel: rangeLabel,
       rangeSourcePath: sourceRoot, // 直接基于源根目录
       rangeTargetPath: targetRoot, // 直接基于目标根目录
+      supportsRangeDiscovery: false,
       directoryNames: entries,
       matchKeys: entries.map(createNameNormalizer(ignoreCase))
     };

@@ -1,8 +1,7 @@
-import { createReadStream, createWriteStream, ensureDir, pathExists, remove } from 'fs-extra';
-import { dirname, join, basename } from 'node:path';
+import { ensureDir, pathExists, remove } from 'fs-extra';
+import { dirname, join } from 'node:path';
 import log from '../logger';
 import type { CopyOutcome, CopyProgress, DetailConfig, RangeScanReport } from '../types';
-import type { EventEmitter } from 'node:events';
 
 /**
  * copyService.ts
@@ -50,50 +49,73 @@ export async function copyRange(
   const purgeTargetFirst = options.purgeTargetFirst ?? false;
   const move = options.move ?? false;
   const startTime = Date.now();
+  const logLabel = move ? 'move' : 'copy';
 
-  // 结果汇总数组，按项目结构填充
   const copied: CopyOutcome['copied'] = [];
   const skippedExists: CopyOutcome['skippedExists'] = [];
   const missing: CopyOutcome['missing'] = [];
   const failed: CopyOutcome['failed'] = [];
 
-  // 目标路径必须存在于 detail 中，否则直接失败
   if (!detail.rangeTargetPath) {
     throw new Error('未设置目标目录，无法执行复制。');
   }
 
-  // 计算需要复制的总文件数和总大小
-  const filesToCopy = scanReport.findings.filter(f => f.status === 'exists');
-  const totalFiles = filesToCopy.length;
-  const totalBytes = filesToCopy.reduce((sum, finding) => {
+  const filesToProcess = scanReport.findings.filter((finding) => finding.status === 'exists');
+  const totalFiles = filesToProcess.length;
+  let totalBytes = filesToProcess.reduce((sum, finding) => {
     const [match] = finding.matches;
     return sum + (match?.sizeInBytes || 0);
   }, 0);
-
   let bytesCopied = 0;
+  let processedFiles = 0;
 
-  // 发送初始进度
-  if (progressCallback) {
+  function emitProgress(
+    stage: CopyProgress['stage'],
+    options: {
+      currentFile?: string;
+      currentFileIndex?: number;
+      partialFileProgress?: number;
+      errorMessage?: string;
+    } = {}
+  ) {
+    if (!progressCallback) {
+      return;
+    }
+
+    const elapsed = (Date.now() - startTime) / 1000;
+    const speed = bytesCopied > 0 && elapsed > 0 ? bytesCopied / elapsed : 0;
+    const percentageBase =
+      stage === 'completed'
+        ? totalFiles
+        : Math.min(totalFiles, processedFiles + (options.partialFileProgress ?? 0));
+
     progressCallback({
-      stage: 'preparing',
-      bytesCopied: 0,
+      stage,
+      currentFile: options.currentFile,
+      currentFileIndex:
+        options.currentFileIndex ?? (stage === 'completed' ? totalFiles : processedFiles),
+      totalFiles,
+      bytesCopied,
       totalBytes,
-      elapsedSeconds: 0,
-      percentage: 0
+      speedBytesPerSecond: speed,
+      elapsedSeconds: elapsed,
+      estimatedRemainingSeconds:
+        totalBytes > bytesCopied && speed > 0 ? (totalBytes - bytesCopied) / speed : undefined,
+      percentage: totalFiles > 0 ? (percentageBase / totalFiles) * 100 : stage === 'completed' ? 100 : 0,
+      errorMessage: options.errorMessage
     });
   }
 
-  // 遍历扫描结果中的每个发现项（finding），按状态处理
+  emitProgress('preparing');
+
   for (let index = 0; index < scanReport.findings.length; index++) {
     const finding = scanReport.findings[index];
     switch (finding.status) {
-      // 源目录缺失，记录并继续
       case 'missing': {
         missing.push(finding.directory);
         break;
       }
 
-      // 重复匹配：扫描期望只有一个匹配但找到了多个或冲突，标记为失败
       case 'duplicate': {
         failed.push({
           name: finding.directory,
@@ -102,150 +124,108 @@ export async function copyRange(
         break;
       }
 
-      // 存在可复制的匹配项，执行复制逻辑
       case 'exists': {
-        // 取第一个匹配项（scan 产生的 matches），若不存在则视为异常
         const [match] = finding.matches;
+        const currentFileName = match?.name ?? finding.directory;
+        const currentFilePath = match?.sourcePath;
+        const currentFileSize = match?.sizeInBytes ?? 0;
+        let copiedForCurrentFile = 0;
+        let destination = detail.rangeTargetPath ? join(detail.rangeTargetPath, currentFileName) : '';
+
+        emitProgress('copying', {
+          currentFile: currentFileName,
+          currentFileIndex: Math.min(processedFiles + 1, totalFiles)
+        });
+
         if (!match) {
           failed.push({
             name: finding.directory,
             reason: '扫描结果异常，未找到目录。'
           });
-          break;
-        }
-
-        const currentFileName = match.name;
-        const currentFilePath = match.sourcePath;
-        const currentFileSize = match.sizeInBytes;
-
-        // 发送开始复制当前文件的消息
-        if (progressCallback) {
-          const elapsed = (Date.now() - startTime) / 1000;
-          const speed = bytesCopied > 0 ? bytesCopied / elapsed : 0;
-          progressCallback({
-            stage: 'copying',
-            currentFile: currentFileName,
-            currentFileIndex: index,
-            totalFiles,
-            bytesCopied,
-            totalBytes,
-            speedBytesPerSecond: speed,
-            elapsedSeconds: elapsed,
-            estimatedRemainingSeconds: speed > 0 ? (totalBytes - bytesCopied) / speed : undefined,
-            percentage: totalBytes > 0 ? (bytesCopied / totalBytes) * 100 : 0
-          });
-        }
-
-        // 计算目标路径：放置到对应的区间目标目录下
-        const destination = join(detail.rangeTargetPath, match.name);
-        const parentDir = dirname(destination);
-
-        try {
-          // 检查目标是否已存在；如果存在且不允许覆盖，则跳过并记录
-          const alreadyExists = await pathExists(destination);
-          if (alreadyExists && purgeTargetFirst) {
-            try {
+        } else {
+          try {
+            const alreadyExists = await pathExists(destination);
+            if (alreadyExists && purgeTargetFirst) {
               await remove(destination);
               log.warn('[copy] 已清理目标目录:', destination);
-            } catch (error) {
-              log.error('[copy] 清理目标目录失败:', destination, error);
-              failed.push({
-                name: finding.directory,
-                reason: error instanceof Error ? error.message : '清理目标目录失败'
-              });
-              break;
             }
-          } else if (alreadyExists && !overwrite) {
-            skippedExists.push({
-              ...match,
-              targetPath: destination
-            });
-            log.warn('[copy] 跳过已存在目录:', destination);
 
-            // 更新进度（跳过也算完成这个文件）
-            bytesCopied += currentFileSize;
-            if (progressCallback) {
-              const elapsed = (Date.now() - startTime) / 1000;
-              const speed = bytesCopied > 0 ? bytesCopied / elapsed : 0;
-              progressCallback({
-                stage: 'copying',
-                currentFile: currentFileName,
-                currentFileIndex: index + 1,
-                totalFiles,
-                bytesCopied,
-                totalBytes,
-                speedBytesPerSecond: speed,
-                elapsedSeconds: elapsed,
-                estimatedRemainingSeconds: speed > 0 ? (totalBytes - bytesCopied) / speed : undefined,
-                percentage: totalBytes > 0 ? (bytesCopied / totalBytes) * 100 : 0
+            if (alreadyExists && !overwrite && !purgeTargetFirst) {
+              skippedExists.push({
+                ...match,
+                targetPath: destination
               });
-            }
-            break;
-          }
+              totalBytes = Math.max(bytesCopied, totalBytes - currentFileSize);
+              log.warn('[copy] 跳过已存在目录:', destination);
+            } else {
+              const parentDir = dirname(destination);
+              const shouldMoveViaRobocopy = move && (!alreadyExists || purgeTargetFirst || !overwrite);
 
-          // 确保父目录存在，然后执行复制（流式复制以支持进度）
-          await ensureDir(parentDir);
-          await copyDirectoryWithProgress(
-            currentFilePath,
-            destination,
-            overwrite,
-            currentFileSize,
-            (chunkBytes) => {
-              bytesCopied += chunkBytes;
-              if (progressCallback) {
-                const elapsed = (Date.now() - startTime) / 1000;
-                const speed = bytesCopied > 0 ? bytesCopied / elapsed : 0;
-                progressCallback({
-                  stage: 'copying',
-                  currentFile: currentFileName,
-                  currentFileIndex: index,
-                  totalFiles,
-                  bytesCopied,
-                  totalBytes,
-                  speedBytesPerSecond: speed,
-                  elapsedSeconds: elapsed,
-                  estimatedRemainingSeconds: speed > 0 ? (totalBytes - bytesCopied) / speed : undefined,
-                  percentage: totalBytes > 0 ? (bytesCopied / totalBytes) * 100 : 0
-                });
+              await ensureDir(parentDir);
+              await copyDirectoryWithProgress(
+                currentFilePath,
+                destination,
+                currentFileSize,
+                (chunkBytes) => {
+                  copiedForCurrentFile += chunkBytes;
+                  bytesCopied += chunkBytes;
+                  const partialFileProgress =
+                    currentFileSize > 0 ? Math.min(copiedForCurrentFile / currentFileSize, 1) : 0;
+
+                  emitProgress('copying', {
+                    currentFile: currentFileName,
+                    currentFileIndex: Math.min(processedFiles + 1, totalFiles),
+                    partialFileProgress
+                  });
+                },
+                {
+                  move: shouldMoveViaRobocopy
+                }
+              );
+
+              if (move && !shouldMoveViaRobocopy) {
+                try {
+                  await remove(currentFilePath);
+                  log.info('[move] 已删除源目录:', currentFilePath);
+                } catch (error) {
+                  const message =
+                    error instanceof Error ? error.message : '未知错误';
+                  throw new Error(`已复制到目标，但删除源目录失败: ${message}`);
+                }
               }
-            },
-            move
-          );
 
-          // 复制成功，记录目标路径以供上层展示
-          copied.push({
-            ...match,
-            targetPath: destination
-          });
-          log.info('[copy] 完成:', match.sourcePath, '->', destination);
-        } catch (error) {
-          // 记录错误并将该项标记为失败，保留错误信息用于诊断
-          log.error('[copy] 失败:', match.sourcePath, '->', destination, error);
-          failed.push({
-            name: finding.directory,
-            reason: error instanceof Error ? error.message : '未知错误'
-          });
+              copied.push({
+                ...match,
+                targetPath: destination
+              });
+              log.info(`[${logLabel}] 完成:`, match.sourcePath, '->', destination);
+            }
+          } catch (error) {
+            totalBytes = Math.max(
+              bytesCopied,
+              totalBytes - Math.max(0, currentFileSize - copiedForCurrentFile)
+            );
+            log.error(`[${logLabel}] 失败:`, currentFilePath, '->', destination, error);
+            failed.push({
+              name: finding.directory,
+              reason: error instanceof Error ? error.message : '未知错误'
+            });
+          }
         }
+
+        processedFiles += 1;
+        emitProgress('copying', {
+          currentFile: currentFileName,
+          currentFileIndex: processedFiles
+        });
         break;
       }
     }
   }
 
-  // 发送完成进度
-  if (progressCallback) {
-    const elapsed = (Date.now() - startTime) / 1000;
-    const speed = bytesCopied > 0 ? bytesCopied / elapsed : 0;
-    progressCallback({
-      stage: 'completed',
-      currentFileIndex: totalFiles,
-      totalFiles,
-      bytesCopied,
-      totalBytes,
-      speedBytesPerSecond: speed,
-      elapsedSeconds: elapsed,
-      percentage: 100
-    });
-  }
+  emitProgress('completed', {
+    currentFileIndex: totalFiles
+  });
 
   return {
     detail,
@@ -271,22 +251,51 @@ async function deleteRange(
 
   const deletable = scanReport.findings.filter((f) => f.status === 'exists');
   const totalFiles = deletable.length;
-  const totalBytes = deletable.reduce((sum, finding) => {
+  let totalBytes = deletable.reduce((sum, finding) => {
     const [match] = finding.matches;
     return sum + (match?.sizeInBytes || 0);
   }, 0);
-
   let bytesDeleted = 0;
+  let processedFiles = 0;
 
-  if (progressCallback) {
+  function emitProgress(
+    stage: CopyProgress['stage'],
+    options: {
+      currentFile?: string;
+      currentFileIndex?: number;
+      partialFileProgress?: number;
+      errorMessage?: string;
+    } = {}
+  ) {
+    if (!progressCallback) {
+      return;
+    }
+
+    const elapsed = (Date.now() - startTime) / 1000;
+    const speed = bytesDeleted > 0 && elapsed > 0 ? bytesDeleted / elapsed : 0;
+    const percentageBase =
+      stage === 'completed'
+        ? totalFiles
+        : Math.min(totalFiles, processedFiles + (options.partialFileProgress ?? 0));
+
     progressCallback({
-      stage: 'preparing',
-      bytesCopied: 0,
+      stage,
+      currentFile: options.currentFile,
+      currentFileIndex:
+        options.currentFileIndex ?? (stage === 'completed' ? totalFiles : processedFiles),
+      totalFiles,
+      bytesCopied: bytesDeleted,
       totalBytes,
-      elapsedSeconds: 0,
-      percentage: 0
+      speedBytesPerSecond: speed,
+      elapsedSeconds: elapsed,
+      estimatedRemainingSeconds:
+        totalBytes > bytesDeleted && speed > 0 ? (totalBytes - bytesDeleted) / speed : undefined,
+      percentage: totalFiles > 0 ? (percentageBase / totalFiles) * 100 : stage === 'completed' ? 100 : 0,
+      errorMessage: options.errorMessage
     });
   }
+
+  emitProgress('preparing');
 
   for (let index = 0; index < scanReport.findings.length; index++) {
     const finding = scanReport.findings[index];
@@ -304,97 +313,51 @@ async function deleteRange(
       }
       case 'exists': {
         const [match] = finding.matches;
+        const currentFileName = match?.name ?? finding.directory;
+        const currentFileSize = match?.sizeInBytes ?? 0;
+
+        emitProgress('copying', {
+          currentFile: currentFileName,
+          currentFileIndex: Math.min(processedFiles + 1, totalFiles)
+        });
+
         if (!match) {
           failed.push({
             name: finding.directory,
             reason: '扫描结果异常，未找到目录。'
           });
-          break;
+        } else {
+          try {
+            await remove(match.sourcePath);
+            bytesDeleted += currentFileSize;
+            copied.push({
+              ...match,
+              targetPath: match.sourcePath
+            });
+            log.info('[delete] 完成:', match.sourcePath);
+          } catch (error) {
+            totalBytes = Math.max(bytesDeleted, totalBytes - currentFileSize);
+            log.error('[delete] 失败:', match.sourcePath, error);
+            failed.push({
+              name: finding.directory,
+              reason: error instanceof Error ? error.message : '未知错误'
+            });
+          }
         }
 
-        const currentFileName = match.name;
-
-        if (progressCallback) {
-          const elapsed = (Date.now() - startTime) / 1000;
-          const speed = bytesDeleted > 0 ? bytesDeleted / elapsed : 0;
-          progressCallback({
-            stage: 'copying',
-            currentFile: currentFileName,
-            currentFileIndex: index,
-            totalFiles,
-            bytesCopied: bytesDeleted,
-            totalBytes,
-            speedBytesPerSecond: speed,
-            elapsedSeconds: elapsed,
-            estimatedRemainingSeconds:
-              totalBytes > 0 && speed > 0 ? (totalBytes - bytesDeleted) / speed : undefined,
-            percentage:
-              totalBytes > 0
-                ? (bytesDeleted / totalBytes) * 100
-                : totalFiles > 0
-                  ? (index / totalFiles) * 100
-                  : 0
-          });
-        }
-
-        try {
-          await remove(match.sourcePath);
-          bytesDeleted += match.sizeInBytes || 0;
-          copied.push({
-            ...match,
-            targetPath: match.sourcePath
-          });
-          log.info('[delete] 完成:', match.sourcePath);
-        } catch (error) {
-          log.error('[delete] 失败:', match.sourcePath, error);
-          failed.push({
-            name: finding.directory,
-            reason: error instanceof Error ? error.message : '未知错误'
-          });
-        }
-
-        if (progressCallback) {
-          const elapsed = (Date.now() - startTime) / 1000;
-          const speed = bytesDeleted > 0 ? bytesDeleted / elapsed : 0;
-          const completedIndex = index + 1;
-          progressCallback({
-            stage: 'copying',
-            currentFile: currentFileName,
-            currentFileIndex: completedIndex,
-            totalFiles,
-            bytesCopied: bytesDeleted,
-            totalBytes,
-            speedBytesPerSecond: speed,
-            elapsedSeconds: elapsed,
-            estimatedRemainingSeconds:
-              totalBytes > 0 && speed > 0 ? (totalBytes - bytesDeleted) / speed : undefined,
-            percentage:
-              totalBytes > 0
-                ? (bytesDeleted / totalBytes) * 100
-                : totalFiles > 0
-                  ? (completedIndex / totalFiles) * 100
-                  : 0
-          });
-        }
+        processedFiles += 1;
+        emitProgress('copying', {
+          currentFile: currentFileName,
+          currentFileIndex: processedFiles
+        });
         break;
       }
     }
   }
 
-  if (progressCallback) {
-    const elapsed = (Date.now() - startTime) / 1000;
-    const speed = bytesDeleted > 0 ? bytesDeleted / elapsed : 0;
-    progressCallback({
-      stage: 'completed',
-      currentFileIndex: totalFiles,
-      totalFiles,
-      bytesCopied: bytesDeleted,
-      totalBytes,
-      speedBytesPerSecond: speed,
-      elapsedSeconds: elapsed,
-      percentage: 100
-    });
-  }
+  emitProgress('completed', {
+    currentFileIndex: totalFiles
+  });
 
   return {
     detail,
@@ -411,43 +374,23 @@ import { execRobocopy } from './robocopyAdapter';
 async function copyDirectoryWithProgress(
   source: string,
   destination: string,
-  overwrite: boolean,
   directorySize: number,
   onProgress: (bytes: number) => void,
-  move = false
+  options: {
+    readonly move?: boolean;
+  } = {}
 ): Promise<void> {
-  const start = Date.now();
-
-  // 对于 directorySize 很小的目录，Robocopy 的启动开销可能比复制本身还大
-  // 但为了简化逻辑和统一性，这里全部交给 Robocopy (除了空目录)
+  const move = options.move ?? false;
 
   try {
-    // 确保目标父级存在 (Robocopy 会自动创建目标目录本身，但以防万一)
-    // await ensureDir(destination); // Robocopy creates the dir
-
-    // 通知开始
     onProgress(0);
-
-    // 执行 Robocopy
-    // overwrite 标志在这里对应的主要是 /MIR (镜像) 还是 /E (普通复制)
-    // 我们的业务逻辑是 "Merge/Update"，所以始终用 /E 即可。
-    // Robocopy 默认行为就是：如果源比目标新，则覆盖；否则跳过。这符合大多数 "overwrite=true" 的直觉。
-    // 如果 overwrite=false，我们很难在目录级别精确控制 "完全不覆盖任何文件"，
-    // 除非用 /XC (Exclude Changed) /XN (Exclude Newer) /XO (Exclude Older)。
-    // 简化起见，这里假设 overwrite=true 意为 "允许更新"，overwrite=false 意为 "通过上层逻辑跳过已存在的目录"。
-    // *注意*：上层 copyRange 已经根据 "overwrite" 和 "alreadyExists" 做了目录级的跳过判断。
-    // 所以进入这个函数时，意味着我们要么是新建目录，要么是确实需要合并/覆盖。
 
     await execRobocopy(source, destination, {
       threads: 32,
       move
     });
 
-    // 完成后，一次性增加进度
     onProgress(directorySize);
-
-    // log.info(`[copy] Robocopy finished for ${basename(destination)} in ${Date.now() - start}ms`);
-
   } catch (err) {
     log.error(`[copy] Robocopy failed for ${source}`, err);
     throw err;

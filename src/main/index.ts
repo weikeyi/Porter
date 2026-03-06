@@ -9,8 +9,14 @@ import { tileCopyEngine } from './services/tilecopyEngine';
 
 const isDev = process.env.NODE_ENV === 'development' || process.env.DEBUG_PROD === 'true';
 const preloadPath = join(__dirname, '../preload/index.cjs');
+const startupStartedAt = Date.now();
+const SHOW_WINDOW_FALLBACK_MS = 1500;
 
 let mainWindow: BrowserWindow | null = null;
+
+function formatElapsedMs(since = startupStartedAt) {
+  return `${Date.now() - since}ms`;
+}
 
 async function showOpenDialog(options: OpenDialogOptions) {
   const window = BrowserWindow.getFocusedWindow() ?? mainWindow ?? undefined;
@@ -43,12 +49,14 @@ function resolveIconPath(): string | undefined {
 }
 
 async function createWindow() {
+  const windowStartTime = Date.now();
   const window = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 960,
     minHeight: 640,
     show: false,
+    backgroundColor: '#111418',
     autoHideMenuBar: true,
     webPreferences: {
       preload: preloadPath,
@@ -60,14 +68,45 @@ async function createWindow() {
 
   log.info('[main] BrowserWindow created');
 
-  window.webContents.on('did-finish-load', () => {
-    log.info('[main] renderer did-finish-load');
+  let hasShownWindow = false;
+  const showWindow = (reason: string) => {
+    if (hasShownWindow || window.isDestroyed()) {
+      return;
+    }
+    hasShownWindow = true;
+    if (!window.isVisible()) {
+      window.show();
+    }
+    window.focus();
+    log.info('[main] 窗口已显示', {
+      reason,
+      windowElapsed: formatElapsedMs(windowStartTime),
+      totalElapsed: formatElapsedMs()
+    });
+  };
+
+  const showWindowTimer = setTimeout(() => {
+    showWindow(`fallback-${SHOW_WINDOW_FALLBACK_MS}ms`);
+  }, SHOW_WINDOW_FALLBACK_MS);
+
+  window.once('show', () => {
+    clearTimeout(showWindowTimer);
   });
 
-  window.on('ready-to-show', () => {
-    log.info('[main] ready-to-show → show & focus');
-    window.show();
-    window.focus();
+  window.webContents.once('did-finish-load', () => {
+    log.info('[main] renderer did-finish-load', {
+      windowElapsed: formatElapsedMs(windowStartTime),
+      totalElapsed: formatElapsedMs()
+    });
+    showWindow('did-finish-load');
+  });
+
+  window.once('ready-to-show', () => {
+    log.info('[main] ready-to-show', {
+      windowElapsed: formatElapsedMs(windowStartTime),
+      totalElapsed: formatElapsedMs()
+    });
+    showWindow('ready-to-show');
   });
 
   // In electron-vite, use environment variable or check for dev mode
@@ -75,13 +114,16 @@ async function createWindow() {
     const devServerUrl = process.env['VITE_DEV_SERVER_URL'] || 'http://localhost:5173';
     log.info('[main] loading dev server', devServerUrl);
     await window.loadURL(devServerUrl);
-    window.webContents.openDevTools({ mode: 'detach' });
+    if (process.env.OPEN_DEVTOOLS === 'true') {
+      window.webContents.openDevTools({ mode: 'detach' });
+    }
   } else {
     log.info('[main] loading production build');
     await window.loadFile(join(__dirname, '../../dist/index.html'));
   }
 
   window.on('closed', () => {
+    clearTimeout(showWindowTimer);
     mainWindow = null;
   });
 
@@ -108,7 +150,9 @@ app.whenReady().then(() => {
   }
 
   initializeLogger();
-  log.info('[main] 应用启动');
+  log.info('[main] app.whenReady 完成', {
+    totalElapsed: formatElapsedMs()
+  });
 
   void createWindow();
 });

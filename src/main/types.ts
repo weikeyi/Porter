@@ -3,6 +3,7 @@ export interface DetailConfig {
   readonly configPath: string;
   readonly rangeSourcePath: string;
   readonly rangeTargetPath?: string;
+  readonly supportsRangeDiscovery: boolean;
   readonly directoryNames: string[];
   readonly matchKeys: string[];
 }
