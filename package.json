@@ -4,8 +4,16 @@
   "private": true,
   "type": "module",
   "description": "Porter - visualize and control folder copying on Windows.",
-  "author": "",
+  "author": "weikeyi",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/weikeyi/porter.git"
+  },
+  "homepage": "https://github.com/weikeyi/porter#readme",
+  "bugs": {
+    "url": "https://github.com/weikeyi/porter/issues"
+  },
   "main": "dist-electron/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
