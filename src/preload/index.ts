@@ -22,6 +22,8 @@ export interface TileCopyAPI {
   selectMainConfigDirectory: () => Promise<string | null>;
   selectSourceRoot: () => Promise<string | null>;
   selectTargetRoot: () => Promise<string | null>;
+  getSavedConfig: () => Promise<Record<string, unknown>>;
+  saveConfig: (config: Record<string, unknown>) => Promise<void>;
 }
 
 const api: TileCopyAPI = {
@@ -42,7 +44,9 @@ const api: TileCopyAPI = {
   selectMainConfig: () => ipcRenderer.invoke('tilecopy:select-main-config'),
   selectMainConfigDirectory: () => ipcRenderer.invoke('tilecopy:select-main-config-directory'),
   selectSourceRoot: () => ipcRenderer.invoke('tilecopy:select-source-root'),
-  selectTargetRoot: () => ipcRenderer.invoke('tilecopy:select-target-root')
+  selectTargetRoot: () => ipcRenderer.invoke('tilecopy:select-target-root'),
+  getSavedConfig: () => ipcRenderer.invoke('tilecopy:get-saved-config'),
+  saveConfig: (config) => ipcRenderer.invoke('tilecopy:save-config', config)
 };
 
 contextBridge.exposeInMainWorld('tilecopy', api);

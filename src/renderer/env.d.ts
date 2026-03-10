@@ -19,6 +19,8 @@ interface TileCopyAPI {
   selectMainConfigDirectory: () => Promise<string | null>;
   selectSourceRoot: () => Promise<string | null>;
   selectTargetRoot: () => Promise<string | null>;
+  getSavedConfig: () => Promise<Record<string, unknown>>;
+  saveConfig: (config: Record<string, unknown>) => Promise<void>;
 }
 
 declare global {

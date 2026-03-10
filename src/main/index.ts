@@ -6,6 +6,7 @@ import { EventEmitter } from 'node:events';
 import log, { initializeLogger } from './logger';
 import type { TileCopyJobRequest } from './types';
 import { tileCopyEngine } from './services/tilecopyEngine';
+import { getSavedConfig, saveConfig } from './services/configStore';
 
 const isDev = process.env.NODE_ENV === 'development' || process.env.DEBUG_PROD === 'true';
 const preloadPath = join(__dirname, '../preload/index.cjs');
@@ -130,8 +131,6 @@ async function createWindow() {
   mainWindow = window;
 }
 
-app.commandLine.appendSwitch('enable-features', 'ElectronSerialChooser');
-
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
@@ -167,6 +166,10 @@ process.on('unhandledRejection', (reason) => {
 
 function registerIpcHandlers() {
   ipcMain.handle('tilecopy:ping', () => 'pong');
+
+  // 配置持久化
+  ipcMain.handle('tilecopy:get-saved-config', () => getSavedConfig());
+  ipcMain.handle('tilecopy:save-config', (_event, config) => saveConfig(config));
 
   ipcMain.handle('tilecopy:check-paths', async (_event, request: TileCopyJobRequest) => {
     return tileCopyEngine.pathsAccessible(request);

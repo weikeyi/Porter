@@ -6,3 +6,5 @@ release
 .claude
 .trae
 tsconfig.tsbuildinfo
+docs
+.trae
