@@ -26,6 +26,7 @@
     "dist:win:nsis": "npm run build && set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& set ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/&& electron-builder --win nsis"
   },
   "dependencies": {
+    "electron-log": "^5.1.1",
     "electron-store": "^11.0.2",
     "fast-glob": "^3.3.2",
     "fs-extra": "^11.2.0",
@@ -36,7 +37,6 @@
     "@vitejs/plugin-vue": "^5.0.4",
     "electron": "^31.0.1",
     "electron-builder": "^24.13.3",
-    "electron-log": "^5.1.1",
     "electron-vite": "^2.2.0",
     "typescript": "^5.4.5",
     "vite": "^5.2.10",
