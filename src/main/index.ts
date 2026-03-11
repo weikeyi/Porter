@@ -200,11 +200,21 @@ function registerIpcHandlers() {
     try {
       const results = await tileCopyEngine.executeCopy(request);
       return results;
+    } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        log.warn('[main] 复制任务被用户取消。');
+        throw new Error('CANCELED'); // 以更简单的纯文本向渲染进程反映取消，避免序列化 DOMException 丢失细节
+      }
+      throw err;
     } finally {
       // 清理事件监听器
       progressEmitter.removeListener('progress', progressListener);
       progressEmitter.removeAllListeners();
     }
+  });
+
+  ipcMain.handle('tilecopy:cancel-copy', () => {
+    tileCopyEngine.cancelCurrentJob();
   });
 
   ipcMain.handle('tilecopy:select-main-config', async () => {

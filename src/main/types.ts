@@ -64,6 +64,7 @@ export interface TileCopyJobRequest {
   readonly discoverRangeSubRoot?: boolean;
   readonly discoveryMaxDepth?: number;
   readonly operation: 'copy' | 'move' | 'delete';
+  readonly signal?: AbortSignal;
 }
 
 export interface CopyProgress {

@@ -19,9 +19,20 @@ export class TileCopyEngine {
   private lastPreflight: PreflightReport[] = [];
   private lastPreflightSignature: string | null = null;
   private progressEmitter: EventEmitter | null = null;
+  private isRunning: boolean = false;
+  private currentAbortController: AbortController | null = null;
 
   setProgressEmitter(emitter: EventEmitter) {
     this.progressEmitter = emitter;
+  }
+
+  cancelCurrentJob() {
+    if (this.isRunning && this.currentAbortController) {
+      log.info('[engine] 接收到取消请求，正在终止当前任务...');
+      this.currentAbortController.abort();
+    } else {
+      log.warn('[engine] 当前没有正在运行的任务，无法取消。');
+    }
   }
 
   async loadConfig(request: TileCopyJobRequest): Promise<ParsedMainConfig> {
@@ -44,6 +55,10 @@ export class TileCopyEngine {
   }
 
   async preflight(request: TileCopyJobRequest): Promise<PreflightReport[]> {
+    if (this.isRunning) {
+      throw new Error('当前已有复制任务正在运行，不能执行分析（Preflight）。请等待其完成后再试。');
+    }
+
     const config = await this.loadConfig(request);
     const preflightSignature = this.createPreflightSignature(request);
     const reports: PreflightReport[] = [];
@@ -68,21 +83,29 @@ export class TileCopyEngine {
   }
 
   async executeCopy(request: TileCopyJobRequest): Promise<CopyOutcome[]> {
-    const configSignature = this.createConfigSignature(request);
-    const preflightSignature = this.createPreflightSignature(request);
-    const hasMatchingPreflight =
-      this.lastPreflight.length > 0 &&
-      this.lastPreflightSignature === preflightSignature &&
-      this.lastConfig !== null &&
-      this.lastConfigSignature === configSignature;
-    const preflight = hasMatchingPreflight ? this.lastPreflight : await this.preflight(request);
-    const config = this.lastConfig ?? (await this.loadConfig(request));
-    if (config.errors.length > 0) {
-      throw new Error(`配置存在错误，请先修复后再执行。首条错误：${config.errors[0]}`);
+    if (this.isRunning) {
+      throw new Error('当前已有复制/删除任务正在进行中，请等待其完成后再试。');
     }
-    const results: CopyOutcome[] = [];
+    
+    this.isRunning = true;
+    this.currentAbortController = new AbortController();
 
-    // 计算全局总文件数与总字节数（仅统计可复制的 exists 项）
+    try {
+      const configSignature = this.createConfigSignature(request);
+      const preflightSignature = this.createPreflightSignature(request);
+      const hasMatchingPreflight =
+        this.lastPreflight.length > 0 &&
+        this.lastPreflightSignature === preflightSignature &&
+        this.lastConfig !== null &&
+        this.lastConfigSignature === configSignature;
+      const preflight = hasMatchingPreflight ? this.lastPreflight : await this.preflight(request);
+      const config = this.lastConfig ?? (await this.loadConfig(request));
+      if (config.errors.length > 0) {
+        throw new Error(`配置存在错误，请先修复后再执行。首条错误：${config.errors[0]}`);
+      }
+      const results: CopyOutcome[] = [];
+
+      // 计算全局总文件数与总字节数（仅统计可复制的 exists 项）
     const rangeTotals = preflight.map((report) => {
       const existsFindings = report.scan.findings.filter((f) => f.status === 'exists');
       const files = existsFindings.length;
@@ -162,6 +185,7 @@ export class TileCopyEngine {
         purgeTargetFirst: request.purgeTargetFirst,
         operation: request.operation,
         progressCallback,
+        signal: this.currentAbortController.signal
       });
 
       // 累加已完成的基数（以便后续区间的全局进度计算）
@@ -211,9 +235,13 @@ export class TileCopyEngine {
         percentage: 100,
       };
       this.progressEmitter.emit('progress', finalProgress);
-    }
+      }
 
-    return results;
+      return results;
+    } finally {
+      this.isRunning = false;
+      this.currentAbortController = null;
+    }
   }
 
   private validatePaths(request: TileCopyJobRequest) {

@@ -16,10 +16,61 @@ export interface CopyOptions {
   readonly purgeTargetFirst?: boolean;
   readonly progressCallback?: (progress: CopyProgress) => void;
   readonly move?: boolean;
+  readonly signal?: AbortSignal;
 }
 
 export interface ProcessOptions extends CopyOptions {
   readonly operation?: 'copy' | 'move' | 'delete';
+}
+
+function createProgressEmitter(
+  progressCallback: ((progress: CopyProgress) => void) | undefined,
+  startTime: number,
+  totalFiles: number,
+  getTotalBytes: () => number,
+  getProcessedBytes: () => number,
+  getProcessedFiles: () => number
+) {
+  return function emitProgress(
+    stage: CopyProgress['stage'],
+    options: {
+      currentFile?: string;
+      currentFileIndex?: number;
+      partialFileProgress?: number;
+      errorMessage?: string;
+    } = {}
+  ) {
+    if (!progressCallback) {
+      return;
+    }
+
+    const elapsed = (Date.now() - startTime) / 1000;
+    const processedBytes = getProcessedBytes();
+    const processedFiles = getProcessedFiles();
+    const totalBytes = getTotalBytes();
+
+    const speed = processedBytes > 0 && elapsed > 0 ? processedBytes / elapsed : 0;
+    const percentageBase =
+      stage === 'completed'
+        ? totalFiles
+        : Math.min(totalFiles, processedFiles + (options.partialFileProgress ?? 0));
+
+    progressCallback({
+      stage,
+      currentFile: options.currentFile,
+      currentFileIndex:
+        options.currentFileIndex ?? (stage === 'completed' ? totalFiles : processedFiles),
+      totalFiles,
+      bytesCopied: processedBytes,
+      totalBytes,
+      speedBytesPerSecond: speed,
+      elapsedSeconds: elapsed,
+      estimatedRemainingSeconds:
+        totalBytes > processedBytes && speed > 0 ? (totalBytes - processedBytes) / speed : undefined,
+      percentage: totalFiles > 0 ? (percentageBase / totalFiles) * 100 : stage === 'completed' ? 100 : 0,
+      errorMessage: options.errorMessage
+    });
+  };
 }
 
 export async function processRange(
@@ -69,46 +120,22 @@ export async function copyRange(
   let bytesCopied = 0;
   let processedFiles = 0;
 
-  function emitProgress(
-    stage: CopyProgress['stage'],
-    options: {
-      currentFile?: string;
-      currentFileIndex?: number;
-      partialFileProgress?: number;
-      errorMessage?: string;
-    } = {}
-  ) {
-    if (!progressCallback) {
-      return;
-    }
-
-    const elapsed = (Date.now() - startTime) / 1000;
-    const speed = bytesCopied > 0 && elapsed > 0 ? bytesCopied / elapsed : 0;
-    const percentageBase =
-      stage === 'completed'
-        ? totalFiles
-        : Math.min(totalFiles, processedFiles + (options.partialFileProgress ?? 0));
-
-    progressCallback({
-      stage,
-      currentFile: options.currentFile,
-      currentFileIndex:
-        options.currentFileIndex ?? (stage === 'completed' ? totalFiles : processedFiles),
-      totalFiles,
-      bytesCopied,
-      totalBytes,
-      speedBytesPerSecond: speed,
-      elapsedSeconds: elapsed,
-      estimatedRemainingSeconds:
-        totalBytes > bytesCopied && speed > 0 ? (totalBytes - bytesCopied) / speed : undefined,
-      percentage: totalFiles > 0 ? (percentageBase / totalFiles) * 100 : stage === 'completed' ? 100 : 0,
-      errorMessage: options.errorMessage
-    });
-  }
+  const emitProgress = createProgressEmitter(
+    progressCallback,
+    startTime,
+    totalFiles,
+    () => totalBytes,
+    () => bytesCopied,
+    () => processedFiles
+  );
 
   emitProgress('preparing');
 
   for (let index = 0; index < scanReport.findings.length; index++) {
+    if (options.signal?.aborted) {
+      throw new DOMException('Operation aborted by user', 'AbortError');
+    }
+
     const finding = scanReport.findings[index];
     switch (finding.status) {
       case 'missing': {
@@ -258,46 +285,22 @@ async function deleteRange(
   let bytesDeleted = 0;
   let processedFiles = 0;
 
-  function emitProgress(
-    stage: CopyProgress['stage'],
-    options: {
-      currentFile?: string;
-      currentFileIndex?: number;
-      partialFileProgress?: number;
-      errorMessage?: string;
-    } = {}
-  ) {
-    if (!progressCallback) {
-      return;
-    }
-
-    const elapsed = (Date.now() - startTime) / 1000;
-    const speed = bytesDeleted > 0 && elapsed > 0 ? bytesDeleted / elapsed : 0;
-    const percentageBase =
-      stage === 'completed'
-        ? totalFiles
-        : Math.min(totalFiles, processedFiles + (options.partialFileProgress ?? 0));
-
-    progressCallback({
-      stage,
-      currentFile: options.currentFile,
-      currentFileIndex:
-        options.currentFileIndex ?? (stage === 'completed' ? totalFiles : processedFiles),
-      totalFiles,
-      bytesCopied: bytesDeleted,
-      totalBytes,
-      speedBytesPerSecond: speed,
-      elapsedSeconds: elapsed,
-      estimatedRemainingSeconds:
-        totalBytes > bytesDeleted && speed > 0 ? (totalBytes - bytesDeleted) / speed : undefined,
-      percentage: totalFiles > 0 ? (percentageBase / totalFiles) * 100 : stage === 'completed' ? 100 : 0,
-      errorMessage: options.errorMessage
-    });
-  }
+  const emitProgress = createProgressEmitter(
+    progressCallback,
+    startTime,
+    totalFiles,
+    () => totalBytes,
+    () => bytesDeleted,
+    () => processedFiles
+  );
 
   emitProgress('preparing');
 
   for (let index = 0; index < scanReport.findings.length; index++) {
+    if (options.signal?.aborted) {
+      throw new DOMException('Operation aborted by user', 'AbortError');
+    }
+
     const finding = scanReport.findings[index];
     switch (finding.status) {
       case 'missing': {
@@ -378,6 +381,7 @@ async function copyDirectoryWithProgress(
   onProgress: (bytes: number) => void,
   options: {
     readonly move?: boolean;
+    readonly signal?: AbortSignal;
   } = {}
 ): Promise<void> {
   const move = options.move ?? false;
@@ -387,11 +391,16 @@ async function copyDirectoryWithProgress(
 
     await execRobocopy(source, destination, {
       threads: 32,
-      move
+      move,
+      signal: options.signal
     });
 
     onProgress(directorySize);
   } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      log.warn(`[copy] Robocopy aborted for ${source}`);
+      throw err;
+    }
     log.error(`[copy] Robocopy failed for ${source}`, err);
     throw err;
   }

@@ -17,6 +17,7 @@ export interface TileCopyAPI {
   loadConfig: (request: TileCopyJobRequest) => Promise<ParsedMainConfig>;
   preflight: (request: TileCopyJobRequest) => Promise<PreflightReport[]>;
   executeCopy: (request: TileCopyJobRequest) => Promise<CopyOutcome[]>;
+  cancelCopy: () => Promise<void>;
   onCopyProgress: (callback: (progress: CopyProgress) => void) => () => void;
   selectMainConfig: () => Promise<string | null>;
   selectMainConfigDirectory: () => Promise<string | null>;
@@ -32,6 +33,7 @@ const api: TileCopyAPI = {
   loadConfig: (request) => ipcRenderer.invoke('tilecopy:load-config', request),
   preflight: (request) => ipcRenderer.invoke('tilecopy:preflight', request),
   executeCopy: (request) => ipcRenderer.invoke('tilecopy:execute-copy', request),
+  cancelCopy: () => ipcRenderer.invoke('tilecopy:cancel-copy'),
   onCopyProgress: (callback) => {
     const listener = (_: any, progress: CopyProgress) => {
       callback(progress);

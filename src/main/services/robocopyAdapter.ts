@@ -18,6 +18,10 @@ export interface RobocopyOptions {
    * Corresponds to /MOVE.
    */
   readonly move?: boolean;
+  /**
+   * Abort signal to cancel the ongoing robocopy process.
+   */
+  readonly signal?: AbortSignal;
 }
 
 /**
@@ -34,6 +38,10 @@ export function execRobocopy(
   options: RobocopyOptions = {}
 ): Promise<void> {
   return new Promise((resolve, reject) => {
+    if (options.signal?.aborted) {
+      return reject(new DOMException('Operation aborted by user', 'AbortError'));
+    }
+
     // Default to 32 threads for high performance on modern CPUs/SSDs
     const threads = options.threads ?? 32;
     
@@ -80,12 +88,34 @@ export function execRobocopy(
       stdio: 'ignore' // We don't need the output, it slows things down
     });
 
+    const cleanup = () => {
+      if (options.signal) {
+        options.signal.removeEventListener('abort', onAbort);
+      }
+    };
+
+    const onAbort = () => {
+      cleanup();
+      log.warn('[robocopy] Process aborted. Killing child process:', child.pid);
+      child.kill(); // On Windows, child.kill() sends SIGTERM/SIGKILL equivalent to terminate the task
+      reject(new DOMException('Operation aborted by user', 'AbortError'));
+    };
+
+    if (options.signal) {
+      options.signal.addEventListener('abort', onAbort);
+    }
+
     child.on('error', (err) => {
+      cleanup();
       log.error('[robocopy] Failed to start process:', err);
       reject(err);
     });
 
     child.on('exit', (code) => {
+      cleanup();
+      
+      // If the promise was already rejected by onAbort, this will be safely ignored.
+      
       // Robocopy Exit Codes:
       // 0: No files were copied (that's fine, maybe everything was up to date)
       // 1: Files were copied successfully
