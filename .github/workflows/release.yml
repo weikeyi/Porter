@@ -1,0 +1,33 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*' # 只有当你推送 v 开头的 tag (比如 v0.3.0) 时，才会自动触发这条流水线
+
+jobs:
+  release:
+    runs-on: windows-latest # 因为是要打包 Windows exe，所以分配一台免费的云端 Windows 机器给你
+
+    permissions:
+      contents: write # 必须赋予权限：允许 GitHub 机器人帮你创建 Releases 页面并上传文件
+
+    steps:
+      - name: 1. 检出代码 (Checkout)
+        uses: actions/checkout@v4
+
+      - name: 2. 安装并配置 Node.js 环境
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm' # 开启缓存，让日后每次跑流水线能快一点
+
+      - name: 3. 安装项目依赖
+        run: npm ci
+
+      - name: 4. 自动编译并发布到 GitHub Releases 页面
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # GitHub 免费提供的特殊密钥，允许云端将文件“填”到你的仓库里
+        run: |
+          npm run build
+          npx electron-builder --win --publish always
