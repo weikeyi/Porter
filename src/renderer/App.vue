@@ -269,25 +269,22 @@ async function handlePreflight() {
     preflightReports.value = [];
     copyOutcomes.value = [];
     copyProgress.value = null;
-    console.log('[App] invoking tilecopy.loadConfig', jobRequest.value);
+    console.log('[App] invoking tilecopy.preflight', jobRequest.value);
 
-    const config = await window.tilecopy.loadConfig(jobRequest.value);
-    console.log('[App] config loaded', config);
-    
-    const reports = await window.tilecopy.preflight(jobRequest.value);
-    console.log('[App] preflight reports received', reports);
+    const result = await window.tilecopy.preflight(jobRequest.value);
+    console.log('[App] preflight result received', result);
 
     configInfo.value = {
-      path: config.mainConfigPath,
-      detailCount: config.detailConfigs.length,
+      path: result.config.mainConfigPath,
+      detailCount: result.config.detailConfigs.length,
     };
-    configErrors.value = config.errors;
-    preflightReports.value = reports;
+    configErrors.value = result.config.errors;
+    preflightReports.value = result.reports;
     lastPreflightSignature.value = currentRequestSignature.value;
     runtimeStatus.value =
-      config.errors.length > 0
-        ? `已加载 ${reports.length} 个区间，但存在 ${config.errors.length} 条配置问题，请修复后再执行`
-        : `已加载 ${reports.length} 个区间`;
+      result.config.errors.length > 0
+        ? `已加载 ${result.reports.length} 个区间，但存在 ${result.config.errors.length} 条配置问题，请修复后再执行`
+        : `已加载 ${result.reports.length} 个区间`;
   } catch (error) {
     console.error('[App] preflight error', error);
     configErrors.value = [];
@@ -544,3 +541,4 @@ void (async () => {
   }
 }
 </style>
+

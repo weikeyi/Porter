@@ -45,6 +45,11 @@ export interface PreflightReport {
   readonly scan: RangeScanReport;
 }
 
+export interface PreflightResult {
+  readonly config: ParsedMainConfig;
+  readonly reports: PreflightReport[];
+}
+
 export interface CopyOutcome {
   readonly detail: DetailConfig;
   readonly copied: Array<DirectoryMatch & { targetPath: string }>;
@@ -80,3 +85,4 @@ export interface CopyProgress {
   readonly percentage: number;
   readonly errorMessage?: string;
 }
+

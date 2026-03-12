@@ -6,6 +6,7 @@ import type {
   CopyProgress,
   ParsedMainConfig,
   PreflightReport,
+  PreflightResult,
   TileCopyJobRequest
 } from '../types';
 import { parseMainConfig } from './configLoader';
@@ -35,7 +36,7 @@ export class TileCopyEngine {
     }
   }
 
-  async loadConfig(request: TileCopyJobRequest): Promise<ParsedMainConfig> {
+  private async loadConfig(request: TileCopyJobRequest): Promise<ParsedMainConfig> {
     this.validatePaths(request);
 
     const configSignature = this.createConfigSignature(request);
@@ -54,12 +55,21 @@ export class TileCopyEngine {
     return this.lastConfig;
   }
 
-  async preflight(request: TileCopyJobRequest): Promise<PreflightReport[]> {
+  private async ensureConfig(request: TileCopyJobRequest): Promise<ParsedMainConfig> {
+    const configSignature = this.createConfigSignature(request);
+    if (this.lastConfig && this.lastConfigSignature === configSignature) {
+      return this.lastConfig;
+    }
+
+    return this.loadConfig(request);
+  }
+
+  async preflight(request: TileCopyJobRequest): Promise<PreflightResult> {
     if (this.isRunning) {
       throw new Error('当前已有复制任务正在运行，不能执行分析（Preflight）。请等待其完成后再试。');
     }
 
-    const config = await this.loadConfig(request);
+    const config = await this.ensureConfig(request);
     const preflightSignature = this.createPreflightSignature(request);
     const reports: PreflightReport[] = [];
 
@@ -79,7 +89,10 @@ export class TileCopyEngine {
 
     this.lastPreflight = reports;
     this.lastPreflightSignature = preflightSignature;
-    return reports;
+    return {
+      config,
+      reports
+    };
   }
 
   async executeCopy(request: TileCopyJobRequest): Promise<CopyOutcome[]> {
@@ -98,8 +111,10 @@ export class TileCopyEngine {
         this.lastPreflightSignature === preflightSignature &&
         this.lastConfig !== null &&
         this.lastConfigSignature === configSignature;
-      const preflight = hasMatchingPreflight ? this.lastPreflight : await this.preflight(request);
-      const config = this.lastConfig ?? (await this.loadConfig(request));
+      const preflight = hasMatchingPreflight
+        ? this.lastPreflight
+        : (await this.preflight(request)).reports;
+      const config = await this.ensureConfig(request);
       if (config.errors.length > 0) {
         throw new Error(`配置存在错误，请先修复后再执行。首条错误：${config.errors[0]}`);
       }
@@ -295,3 +310,4 @@ export class TileCopyEngine {
 }
 
 export const tileCopyEngine = new TileCopyEngine();
+

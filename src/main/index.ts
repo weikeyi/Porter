@@ -175,9 +175,6 @@ function registerIpcHandlers() {
     return tileCopyEngine.pathsAccessible(request);
   });
 
-  ipcMain.handle('tilecopy:load-config', async (_event, request: TileCopyJobRequest) => {
-    return tileCopyEngine.loadConfig(request);
-  });
 
   ipcMain.handle('tilecopy:preflight', async (_event, request: TileCopyJobRequest) => {
     return tileCopyEngine.preflight(request);
@@ -274,3 +271,4 @@ function registerIpcHandlers() {
 }
 
 registerIpcHandlers();
+

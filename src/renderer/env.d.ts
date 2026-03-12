@@ -7,9 +7,8 @@ interface TileCopyAPI {
     sourceExists: boolean;
     targetExists: boolean;
   }>;
-  loadConfig: (request: import('#main/types').TileCopyJobRequest) => Promise<import('#main/types').ParsedMainConfig>;
   preflight: (request: import('#main/types').TileCopyJobRequest) => Promise<
-    import('#main/types').PreflightReport[]
+    import('#main/types').PreflightResult
   >;
   executeCopy: (request: import('#main/types').TileCopyJobRequest) => Promise<
     import('#main/types').CopyOutcome[]
@@ -30,3 +29,4 @@ declare global {
 }
 
 export { };
+

@@ -2,8 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type {
   CopyOutcome,
   CopyProgress,
-  ParsedMainConfig,
-  PreflightReport,
+  PreflightResult,
   TileCopyJobRequest
 } from '#main/types';
 
@@ -14,8 +13,7 @@ export interface TileCopyAPI {
     sourceExists: boolean;
     targetExists: boolean;
   }>;
-  loadConfig: (request: TileCopyJobRequest) => Promise<ParsedMainConfig>;
-  preflight: (request: TileCopyJobRequest) => Promise<PreflightReport[]>;
+  preflight: (request: TileCopyJobRequest) => Promise<PreflightResult>;
   executeCopy: (request: TileCopyJobRequest) => Promise<CopyOutcome[]>;
   cancelCopy: () => Promise<void>;
   onCopyProgress: (callback: (progress: CopyProgress) => void) => () => void;
@@ -30,7 +28,6 @@ export interface TileCopyAPI {
 const api: TileCopyAPI = {
   ping: () => ipcRenderer.invoke('tilecopy:ping'),
   checkPaths: (request) => ipcRenderer.invoke('tilecopy:check-paths', request),
-  loadConfig: (request) => ipcRenderer.invoke('tilecopy:load-config', request),
   preflight: (request) => ipcRenderer.invoke('tilecopy:preflight', request),
   executeCopy: (request) => ipcRenderer.invoke('tilecopy:execute-copy', request),
   cancelCopy: () => ipcRenderer.invoke('tilecopy:cancel-copy'),
@@ -52,3 +49,4 @@ const api: TileCopyAPI = {
 };
 
 contextBridge.exposeInMainWorld('tilecopy', api);
+
