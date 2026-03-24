@@ -6,6 +6,8 @@
     />
 
     <section class="content">
+      <DirTxtToolbar />
+
       <ConfigPanel
         :form="form"
         :configInfo="configInfo"
@@ -57,6 +59,7 @@ import type {
 } from "#main/types";
 import { formatError } from "./composables/useFormatters";
 import TopBar from "./components/TopBar.vue";
+import DirTxtToolbar from "./components/DirTxtToolbar.vue";
 import ConfigPanel from "./components/ConfigPanel.vue";
 import ProgressPanel from "./components/ProgressPanel.vue";
 import PreflightPanel from "./components/PreflightPanel.vue";

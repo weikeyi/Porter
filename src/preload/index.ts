@@ -23,6 +23,14 @@ export interface TileCopyAPI {
   selectTargetRoot: () => Promise<string | null>;
   getSavedConfig: () => Promise<Record<string, unknown>>;
   saveConfig: (config: Record<string, unknown>) => Promise<void>;
+
+  // ========== 目录与 TXT 操作 API ==========
+  selectAnyDirectory: (title?: string) => Promise<string | null>;
+  selectAnyTxt: (title?: string) => Promise<string | null>;
+  saveAnyTxt: (defaultName?: string) => Promise<string | null>;
+  dirToTxtGenerate: (dirPath: string, targetTxtPath: string) => Promise<{ success: boolean; message: string }>;
+  dirToTxtAppend: (dirPath: string, targetTxtPath: string) => Promise<{ success: boolean; message: string }>;
+  dirToTxtRemove: (dirPath: string, targetTxtPath: string) => Promise<{ success: boolean; message: string }>;
 }
 
 const api: TileCopyAPI = {
@@ -45,7 +53,15 @@ const api: TileCopyAPI = {
   selectSourceRoot: () => ipcRenderer.invoke('tilecopy:select-source-root'),
   selectTargetRoot: () => ipcRenderer.invoke('tilecopy:select-target-root'),
   getSavedConfig: () => ipcRenderer.invoke('tilecopy:get-saved-config'),
-  saveConfig: (config) => ipcRenderer.invoke('tilecopy:save-config', config)
+  saveConfig: (config) => ipcRenderer.invoke('tilecopy:save-config', config),
+
+  // ========== 目录与 TXT 操作 API ==========
+  selectAnyDirectory: (title) => ipcRenderer.invoke('tilecopy:select-any-directory', title),
+  selectAnyTxt: (title) => ipcRenderer.invoke('tilecopy:select-any-txt', title),
+  saveAnyTxt: (defaultName) => ipcRenderer.invoke('tilecopy:save-any-txt', defaultName),
+  dirToTxtGenerate: (dirPath, targetTxtPath) => ipcRenderer.invoke('tilecopy:dir-to-txt-generate', dirPath, targetTxtPath),
+  dirToTxtAppend: (dirPath, targetTxtPath) => ipcRenderer.invoke('tilecopy:dir-to-txt-append', dirPath, targetTxtPath),
+  dirToTxtRemove: (dirPath, targetTxtPath) => ipcRenderer.invoke('tilecopy:dir-to-txt-remove', dirPath, targetTxtPath)
 };
 
 contextBridge.exposeInMainWorld('tilecopy', api);

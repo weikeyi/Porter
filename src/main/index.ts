@@ -7,6 +7,7 @@ import log, { initializeLogger } from './logger';
 import type { TileCopyJobRequest } from './types';
 import { tileCopyEngine } from './services/tilecopyEngine';
 import { getSavedConfig, saveConfig } from './services/configStore';
+import { dirTxtService } from './services/dirTxtService';
 
 const isDev = process.env.NODE_ENV === 'development' || process.env.DEBUG_PROD === 'true';
 const preloadPath = join(__dirname, '../preload/index.cjs');
@@ -267,6 +268,52 @@ function registerIpcHandlers() {
     }
 
     return result.filePaths[0];
+  });
+
+  // ========== 目录与 TXT 操作 API ==========
+  
+  ipcMain.handle('tilecopy:select-any-directory', async (_event, title: string) => {
+    const result = await showOpenDialog({
+      title: title || '选择目录',
+      properties: ['openDirectory']
+    });
+    return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0];
+  });
+
+  ipcMain.handle('tilecopy:select-any-txt', async (_event, title: string) => {
+    const result = await showOpenDialog({
+      title: title || '选择 TXT 文件',
+      properties: ['openFile'],
+      filters: [{ name: '文本文档', extensions: ['txt'] }]
+    });
+    return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0];
+  });
+
+  ipcMain.handle('tilecopy:save-any-txt', async (_event, defaultName: string) => {
+    const window = BrowserWindow.getFocusedWindow() ?? mainWindow ?? undefined;
+    const options = {
+      title: '保存为 TXT 文件',
+      defaultPath: defaultName || 'dir_names.txt',
+      filters: [{ name: '文本文档', extensions: ['txt'] }]
+    };
+    
+    const result = window 
+      ? await dialog.showSaveDialog(window, options)
+      : await dialog.showSaveDialog(options);
+      
+    return result.canceled || !result.filePath ? null : result.filePath;
+  });
+
+  ipcMain.handle('tilecopy:dir-to-txt-generate', async (_event, dirPath: string, targetTxtPath: string) => {
+    return dirTxtService.generateTxt(dirPath, targetTxtPath);
+  });
+
+  ipcMain.handle('tilecopy:dir-to-txt-append', async (_event, dirPath: string, targetTxtPath: string) => {
+    return dirTxtService.appendToTxt(dirPath, targetTxtPath);
+  });
+
+  ipcMain.handle('tilecopy:dir-to-txt-remove', async (_event, dirPath: string, targetTxtPath: string) => {
+    return dirTxtService.removeFromTxt(dirPath, targetTxtPath);
   });
 }
 

@@ -20,6 +20,13 @@ interface TileCopyAPI {
   selectTargetRoot: () => Promise<string | null>;
   getSavedConfig: () => Promise<Record<string, unknown>>;
   saveConfig: (config: Record<string, unknown>) => Promise<void>;
+
+  selectAnyDirectory: (title?: string) => Promise<string | null>;
+  selectAnyTxt: (title?: string) => Promise<string | null>;
+  saveAnyTxt: (defaultName?: string) => Promise<string | null>;
+  dirToTxtGenerate: (dirPath: string, targetTxtPath: string) => Promise<{ success: boolean; message: string }>;
+  dirToTxtAppend: (dirPath: string, targetTxtPath: string) => Promise<{ success: boolean; message: string }>;
+  dirToTxtRemove: (dirPath: string, targetTxtPath: string) => Promise<{ success: boolean; message: string }>;
 }
 
 declare global {
