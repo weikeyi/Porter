@@ -2,7 +2,17 @@
   <div class="panel progress-panel" v-if="isCopying || copyProgress">
     <div class="panel-header">
       <h2>{{ operationLabel }}进度</h2>
-      <span class="panel-tag">{{ progressStageLabel }}</span>
+      <div class="header-actions">
+        <span class="panel-tag">{{ progressStageLabel }}</span>
+        <button
+          v-if="canCancel"
+          type="button"
+          class="cancel-button"
+          @click="handleCancel"
+        >
+          取消
+        </button>
+      </div>
     </div>
 
     <div class="progress-summary">
@@ -17,6 +27,10 @@
           {{ copyProgress?.totalFiles || 0 }}
         </strong>
       </div>
+      <div class="summary-item" v-if="copyProgress?.percentage !== undefined">
+        <span>完成度</span>
+        <strong>{{ Math.round(copyProgress.percentage) }}%</strong>
+      </div>
       <div class="summary-item" v-if="(copyProgress?.totalBytes || 0) > 0">
         <span>速度</span>
         <strong>{{ formatSpeed(copyProgress?.speedBytesPerSecond || 0) }}</strong>
@@ -26,6 +40,15 @@
         <strong>
           {{ formatBytes(copyProgress?.bytesCopied || 0) }} /
           {{ formatBytes(copyProgress?.totalBytes || 0) }}
+        </strong>
+      </div>
+      <div
+        class="summary-item"
+        v-if="(copyProgress?.estimatedRemainingSeconds ?? 0) > 0"
+      >
+        <span>剩余时间</span>
+        <strong>
+          {{ formatTime(copyProgress?.estimatedRemainingSeconds) }}
         </strong>
       </div>
     </div>
@@ -42,13 +65,26 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { CopyProgress } from '#main/types'
-import { formatBytes, formatSpeed } from '../composables/useFormatters'
+import { formatBytes, formatSpeed, formatTime } from '../composables/useFormatters'
 
 const props = defineProps<{
   copyProgress: CopyProgress | null
   operationLabel: string
   isCopying: boolean
 }>()
+
+const canCancel = computed(
+  () =>
+    props.isCopying &&
+    (props.copyProgress?.stage === 'preparing' ||
+      props.copyProgress?.stage === 'copying')
+)
+
+function handleCancel() {
+  if (props.isCopying && window.tilecopy) {
+    window.tilecopy.cancelCopy()
+  }
+}
 
 const progressStageLabel = computed(() => {
   switch (props.copyProgress?.stage) {
@@ -60,6 +96,8 @@ const progressStageLabel = computed(() => {
       return '已完成'
     case 'error':
       return '执行异常'
+    case 'cancelled':
+      return '已取消'
     default:
       return '待开始'
   }
@@ -78,6 +116,27 @@ const progressStageLabel = computed(() => {
   font-size: 12px;
   font-weight: 600;
   background: transparent;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cancel-button {
+  min-height: 32px;
+  padding: 4px 12px;
+  border: 1px solid var(--red-border);
+  background: transparent;
+  color: #f0a1a1;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cancel-button:hover {
+  background: #201314;
 }
 
 .progress-summary {
