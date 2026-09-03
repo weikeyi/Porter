@@ -73,7 +73,7 @@ export interface TileCopyJobRequest {
 }
 
 export interface CopyProgress {
-  readonly stage: 'preparing' | 'copying' | 'completed' | 'error';
+  readonly stage: 'preparing' | 'copying' | 'completed' | 'error' | 'cancelled';
   readonly currentFile?: string;
   readonly currentFileIndex?: number;
   readonly totalFiles?: number;

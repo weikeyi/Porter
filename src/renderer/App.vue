@@ -224,6 +224,7 @@ const runtimeTone = computed(() => {
   const value = runtimeStatus.value ?? "";
   if (!value) return "neutral";
   if (value.startsWith("错误")) return "danger";
+  if (value.includes("失败")) return "danger";
   if (value.includes("完成") || value.includes("就绪")) return "ok";
   if (value.includes("预检") || value.includes("处理") || value.includes("删除")) {
     return "active";
@@ -312,6 +313,14 @@ async function handleCopy() {
     return;
   }
 
+  // 移动完成后源目录即被删除，确认一次即可
+  if (form.operation === "move") {
+    const confirmMove = window.confirm(
+      `⚠️ 移动操作完成后，源目录中的文件将被删除。\n\n确认要移动这些目录并删除源目录吗？`
+    );
+    if (!confirmMove) return;
+  }
+
   // 二次确认逻辑
   if (form.operation === "delete") {
     const confirmDelete = window.confirm(
@@ -341,8 +350,34 @@ async function handleCopy() {
 
     const outcome = await window.tilecopy.executeCopy(jobRequest.value);
     copyOutcomes.value = outcome;
-    runtimeStatus.value = "操作流程完成";
+    const copiedTotal = outcome.reduce((sum, o) => sum + o.copied.length, 0);
+    const failedTotal = outcome.reduce((sum, o) => sum + o.failed.length, 0);
+    const skippedTotal = outcome.reduce(
+      (sum, o) => sum + o.skippedExists.length,
+      0
+    );
+    runtimeStatus.value =
+      failedTotal > 0
+        ? `操作完成：成功 ${copiedTotal}，失败 ${failedTotal}${
+            skippedTotal ? `，跳过 ${skippedTotal}` : ""
+          }`
+        : skippedTotal > 0
+          ? `操作完成：成功 ${copiedTotal}，跳过 ${skippedTotal}`
+          : `操作完成：成功 ${copiedTotal}`;
   } catch (error) {
+    const isCancelled =
+      error instanceof Error && error.message === "CANCELED";
+    if (isCancelled) {
+      runtimeStatus.value = "已取消";
+      if (copyProgress.value) {
+        copyProgress.value = {
+          ...copyProgress.value,
+          stage: "cancelled",
+          errorMessage: "用户取消了本次操作",
+        };
+      }
+      return;
+    }
     runtimeStatus.value = formatError(error);
     // 如果出错，也可以显示错误信息
     if (copyProgress.value) {
